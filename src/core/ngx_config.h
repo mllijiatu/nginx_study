@@ -51,8 +51,26 @@
 
 #if !(NGX_WIN32)
 
+/*
+ * ngx_signal_helper - 信号宏辅助函数，用于将信号值转换为SIG开头的宏
+ *
+ * 该宏辅助函数用于将信号值转换为对应的SIG开头的宏，例如 ngx_signal_helper(QUIT) 会被展开为 SIGQUIT。
+ *
+ * 参数:
+ *     n - 信号值
+ */
 #define ngx_signal_helper(n)     SIG##n
+
+/*
+ * ngx_signal_value - 信号值宏，用于将信号值转换为SIG开头的宏
+ *
+ * 该宏用于将信号值转换为对应的SIG开头的宏，通过调用 ngx_signal_helper 辅助函数实现。
+ *
+ * 参数:
+ *     n - 信号值
+ */
 #define ngx_signal_value(n)      ngx_signal_helper(n)
+
 
 #define ngx_random               random
 

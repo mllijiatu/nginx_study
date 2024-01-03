@@ -66,6 +66,16 @@ static ngx_open_file_t ngx_exit_log_file;
  *
  * 该函数是Nginx主进程的核心循环，负责处理信号、管理子进程、周期性任务等。
  *
+ * 主要工作包括：
+ *   1. 初始化信号集合，阻塞相关信号。
+ *   2. 构造进程标题并设置进程标题。
+ *   3. 启动工作进程和缓存管理进程。
+ *   4. 处理定时器，定期执行特定任务。
+ *   5. 阻塞等待信号并处理子进程退出。
+ *   6. 根据信号执行相应的操作，如终止、退出、重新加载配置、重启等。
+ *   7. 处理日志重开、二进制切换等操作。
+ *   8. 循环执行上述步骤，保持主进程一直运行。
+ *
  * 参数:
  *     cycle - Nginx循环结构体，包含配置信息和运行时状态
  */
@@ -314,22 +324,33 @@ void ngx_master_process_cycle(ngx_cycle_t *cycle)
     }
 }
 
-static void
-ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
-{
+/*
+ * ngx_start_worker_processes - 启动工作进程
+ *
+ * 该函数用于启动指定数量的工作进程，每个工作进程都执行 ngx_worker_process_cycle 函数。
+ * 启动后，还通过 ngx_pass_open_channel 函数传递打开的通道给子进程。
+ *
+ * 参数:
+ *     cycle - Nginx循环结构体，包含配置信息和运行时状态
+ *     n - 启动的工作进程数量
+ *     type - 进程类型，例如 NGX_PROCESS_RESPAWN
+ */
+static void ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type) {
     ngx_int_t i;
 
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "start worker processes");
 
-    for (i = 0; i < n; i++)
-    {
-
+    // 循环启动工作进程
+    for (i = 0; i < n; i++) {
+        // 使用 ngx_spawn_process 函数启动工作进程，并指定执行函数为 ngx_worker_process_cycle
         ngx_spawn_process(cycle, ngx_worker_process_cycle,
                           (void *)(intptr_t)i, "worker process", type);
 
+        // 传递打开的通道给子进程
         ngx_pass_open_channel(cycle);
     }
 }
+
 
 static void
 ngx_start_cache_manager_processes(ngx_cycle_t *cycle, ngx_uint_t respawn)
@@ -378,24 +399,30 @@ ngx_start_cache_manager_processes(ngx_cycle_t *cycle, ngx_uint_t respawn)
     ngx_pass_open_channel(cycle);
 }
 
-static void
-ngx_pass_open_channel(ngx_cycle_t *cycle)
-{
+/*
+ * ngx_pass_open_channel - 传递打开的通道给其他进程
+ *
+ * 该函数用于向其他进程传递打开的通道，以便建立通信。通过 ngx_write_channel 函数将通道信息发送给其他进程。
+ *
+ * 参数:
+ *     cycle - Nginx循环结构体，包含配置信息和运行时状态
+ */
+static void ngx_pass_open_channel(ngx_cycle_t *cycle) {
     ngx_int_t i;
     ngx_channel_t ch;
 
+    // 初始化通道结构体
     ngx_memzero(&ch, sizeof(ngx_channel_t));
 
+    // 设置通道命令为打开通道
     ch.command = NGX_CMD_OPEN_CHANNEL;
     ch.pid = ngx_processes[ngx_process_slot].pid;
     ch.slot = ngx_process_slot;
     ch.fd = ngx_processes[ngx_process_slot].channel[0];
 
-    for (i = 0; i < ngx_last_process; i++)
-    {
-
-        if (i == ngx_process_slot || ngx_processes[i].pid == -1 || ngx_processes[i].channel[0] == -1)
-        {
+    // 遍历其他进程，向它们传递通道信息
+    for (i = 0; i < ngx_last_process; i++) {
+        if (i == ngx_process_slot || ngx_processes[i].pid == -1 || ngx_processes[i].channel[0] == -1) {
             continue;
         }
 
@@ -405,12 +432,12 @@ ngx_pass_open_channel(ngx_cycle_t *cycle)
                        i, ngx_processes[i].pid,
                        ngx_processes[i].channel[0]);
 
-        /* TODO: NGX_AGAIN */
-
+        // 通过 ngx_write_channel 函数向其他进程发送通道信息
         ngx_write_channel(ngx_processes[i].channel[0],
                           &ch, sizeof(ngx_channel_t), cycle->log);
     }
 }
+
 
 static void
 ngx_signal_worker_processes(ngx_cycle_t *cycle, int signo)
