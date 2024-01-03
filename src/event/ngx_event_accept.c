@@ -324,6 +324,15 @@ ngx_event_accept(ngx_event_t *ev)
 }
 
 
+/*
+ * 描述：尝试获取接受互斥锁。
+ *
+ * 参数：
+ *   - cycle：指向ngx_cycle_t结构的指针，表示当前周期。
+ *
+ * 返回：成功返回NGX_OK，失败返回NGX_ERROR。
+ */
+
 ngx_int_t
 ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
 {
@@ -336,6 +345,7 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
             return NGX_OK;
         }
 
+        // 如果接受互斥锁已持有但没有待处理的事件，直接返回成功
         if (ngx_enable_accept_events(cycle) == NGX_ERROR) {
             ngx_shmtx_unlock(&ngx_accept_mutex);
             return NGX_ERROR;
@@ -350,6 +360,7 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
                    "accept mutex lock failed: %ui", ngx_accept_mutex_held);
 
+    // 如果接受互斥锁已持有，但获取锁失败，尝试禁用接受事件
     if (ngx_accept_mutex_held) {
         if (ngx_disable_accept_events(cycle, 0) == NGX_ERROR) {
             return NGX_ERROR;
@@ -361,6 +372,16 @@ ngx_trylock_accept_mutex(ngx_cycle_t *cycle)
     return NGX_OK;
 }
 
+
+
+/*
+ * 描述：启用所有监听套接字上的读事件。
+ *
+ * 参数：
+ *   - cycle：指向ngx_cycle_t结构的指针，表示当前周期。
+ *
+ * 返回：成功返回NGX_OK，失败返回NGX_ERROR。
+ */
 
 ngx_int_t
 ngx_enable_accept_events(ngx_cycle_t *cycle)
@@ -378,6 +399,7 @@ ngx_enable_accept_events(ngx_cycle_t *cycle)
             continue;
         }
 
+        // 向监听套接字上添加读事件
         if (ngx_add_event(c->read, NGX_READ_EVENT, 0) == NGX_ERROR) {
             return NGX_ERROR;
         }
@@ -386,6 +408,17 @@ ngx_enable_accept_events(ngx_cycle_t *cycle)
     return NGX_OK;
 }
 
+
+
+/*
+ * 描述：禁用所有监听套接字上的读事件。
+ *
+ * 参数：
+ *   - cycle：指向ngx_cycle_t结构的指针，表示当前周期。
+ *   - all：禁用所有套接字读事件的标志，如果为1则禁用所有，为0则只禁用非reuseport套接字。
+ *
+ * 返回：成功返回NGX_OK，失败返回NGX_ERROR。
+ */
 
 static ngx_int_t
 ngx_disable_accept_events(ngx_cycle_t *cycle, ngx_uint_t all)
@@ -406,8 +439,8 @@ ngx_disable_accept_events(ngx_cycle_t *cycle, ngx_uint_t all)
 #if (NGX_HAVE_REUSEPORT)
 
         /*
-         * do not disable accept on worker's own sockets
-         * when disabling accept events due to accept mutex
+         * 当由于接受互斥锁而禁用接受事件时，
+         * 不要禁用worker自己的套接字
          */
 
         if (ls[i].reuseport && !all) {
@@ -416,6 +449,7 @@ ngx_disable_accept_events(ngx_cycle_t *cycle, ngx_uint_t all)
 
 #endif
 
+        // 从监听套接字上删除读事件
         if (ngx_del_event(c->read, NGX_READ_EVENT, NGX_DISABLE_EVENT)
             == NGX_ERROR)
         {
@@ -425,6 +459,7 @@ ngx_disable_accept_events(ngx_cycle_t *cycle, ngx_uint_t all)
 
     return NGX_OK;
 }
+
 
 
 #if (NGX_HAVE_EPOLLEXCLUSIVE)

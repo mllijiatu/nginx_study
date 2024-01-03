@@ -780,8 +780,155 @@ ngx_epoll_notify(ngx_event_handler_pt handler)
 #endif
 
 
-static ngx_int_t
-ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
+/*
+ * 处理 epoll 模型的事件。
+ *
+ * 参数:
+ *   cycle: 指向 ngx_cycle_t 结构的指针，表示当前的循环。
+ *   timer: 等待事件的超时时间，单位是毫秒。
+ *   flags: 控制处理的标志，如更新时间、处理定时器事件等。
+ *
+ * 返回值:
+ *   若处理成功，返回 NGX_OK；否则返回 NGX_ERROR。
+ */
+static ngx_int_t ngx_epoll_process_events(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags)
+{
+    int                events;
+    uint32_t           revents;
+    ngx_int_t          instance, i;
+    ngx_uint_t         level;
+    ngx_err_t          err;
+    ngx_event_t       *rev, *wev;
+    ngx_queue_t       *queue;
+    ngx_connection_t  *c;
+
+    // 使用 epoll_wait 等待事件的发生
+    events = epoll_wait(ep, event_list, (int) nevents, timer);
+
+    // 获取 epoll_wait 的返回值，判断是否出错
+    err = (events == -1) ? ngx_errno : 0;
+
+    // 如果需要更新时间或者有定时器事件发生，更新时间
+    if (flags & NGX_UPDATE_TIME || ngx_event_timer_alarm) {
+        ngx_time_update();
+    }
+
+    // 处理 epoll_wait 的返回值
+    if (err) {
+        // 若是被中断，则检查是否是定时器超时触发，是的话返回成功
+        if (err == NGX_EINTR) {
+            if (ngx_event_timer_alarm) {
+                ngx_event_timer_alarm = 0;
+                return NGX_OK;
+            }
+            level = NGX_LOG_INFO;
+        } else {
+            level = NGX_LOG_ALERT;
+        }
+
+        // 记录错误日志并返回失败
+        ngx_log_error(level, cycle->log, err, "epoll_wait() failed");
+        return NGX_ERROR;
+    }
+
+    // 若没有事件发生，且不是永久等待，返回成功
+    if (events == 0) {
+        if (timer != NGX_TIMER_INFINITE) {
+            return NGX_OK;
+        }
+
+        // 如果永久等待且没有事件发生，则记录错误日志并返回失败
+        ngx_log_error(NGX_LOG_ALERT, cycle->log, 0,
+                      "epoll_wait() returned no events without timeout");
+        return NGX_ERROR;
+    }
+
+    // 遍历处理所有发生的事件
+    for (i = 0; i < events; i++) {
+        c = event_list[i].data.ptr;
+
+        // 获取事件实例信息
+        instance = (uintptr_t) c & 1;
+        c = (ngx_connection_t *) ((uintptr_t) c & (uintptr_t) ~1);
+
+        // 获取读事件
+        rev = c->read;
+
+        // 检查事件的合法性
+        if (c->fd == -1 || rev->instance != instance) {
+            ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
+                           "epoll: stale event %p", c);
+            continue;
+        }
+
+        // 获取事件发生的具体类型
+        revents = event_list[i].events;
+
+        ngx_log_debug3(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
+                       "epoll: fd:%d ev:%04XD d:%p",
+                       c->fd, revents, event_list[i].data.ptr);
+
+        // 处理读事件
+        if (revents & (EPOLLERR|EPOLLHUP)) {
+            ngx_log_debug2(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
+                           "epoll_wait() error on fd:%d ev:%04XD",
+                           c->fd, revents);
+
+            // 处理错误事件，添加 EPOLLIN 和 EPOLLOUT 以处理至少一个激活的处理程序
+            revents |= EPOLLIN|EPOLLOUT;
+        }
+
+        // 处理读事件
+        if ((revents & EPOLLIN) && rev->active) {
+            // 处理 EPOLLRDHUP 事件
+#if (NGX_HAVE_EPOLLRDHUP)
+            if (revents & EPOLLRDHUP) {
+                rev->pending_eof = 1;
+            }
+#endif
+
+            // 设置读事件为就绪状态，等待处理
+            rev->ready = 1;
+            rev->available = -1;
+
+            // 根据标志处理事件，加入到对应的事件队列或者直接调用事件处理函数
+            if (flags & NGX_POST_EVENTS) {
+                queue = rev->accept ? &ngx_posted_accept_events
+                                    : &ngx_posted_events;
+                ngx_post_event(rev, queue);
+            } else {
+                rev->handler(rev);
+            }
+        }
+
+        // 处理写事件
+        wev = c->write;
+        if ((revents & EPOLLOUT) && wev->active) {
+            // 检查事件的合法性
+            if (c->fd == -1 || wev->instance != instance) {
+                ngx_log_debug1(NGX_LOG_DEBUG_EVENT, cycle->log, 0,
+                               "epoll: stale event %p", c);
+                continue;
+            }
+
+            // 设置写事件为就绪状态，等待处理
+            wev->ready = 1;
+#if (NGX_THREADS)
+            wev->complete = 1;
+#endif
+
+            // 根据标志处理事件，加入到对应的事件队列或者直接调用事件处理函数
+            if (flags & NGX_POST_EVENTS) {
+                ngx_post_event(wev, &ngx_posted_events);
+            } else {
+                wev->handler(wev);
+            }
+        }
+    }
+
+    return NGX_OK;
+}
+
 {
     int                events;
     uint32_t           revents;

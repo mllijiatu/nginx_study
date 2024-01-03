@@ -26,8 +26,17 @@ struct ngx_queue_s {
     (q)->next = q
 
 
-#define ngx_queue_empty(h)                                                    \
-    (h == (h)->prev)
+/*
+ * 宏定义：判断队列是否为空。
+ *
+ * 参数:
+ *   h: 指向ngx_queue_t结构的指针，表示队列头节点。
+ *
+ * 返回值:
+ *   若队列为空，则返回1；否则返回0。
+ */
+#define ngx_queue_empty(h) (h == (h)->prev)
+
 
 
 #define ngx_queue_insert_head(h, x)                                           \
