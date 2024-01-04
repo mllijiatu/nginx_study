@@ -21,9 +21,15 @@ struct ngx_queue_s {
 };
 
 
-#define ngx_queue_init(q)                                                     \
-    (q)->prev = q;                                                            \
-    (q)->next = q
+/**
+ * 初始化 ngx_queue_t 双向链表。
+ *
+ * @param q 指向 ngx_queue_t 结构的指针。
+ */
+#define ngx_queue_init(q)               \
+    (q)->prev = q;                      \
+    (q)->next = q;
+
 
 
 /*

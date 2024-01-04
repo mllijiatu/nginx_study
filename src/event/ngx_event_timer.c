@@ -19,14 +19,23 @@ static ngx_rbtree_node_t  ngx_event_timer_sentinel;
  * a minimum timer value only
  */
 
+/**
+ * 初始化事件计时器。
+ *
+ * @param log 日志结构指针。
+ *
+ * @return 如果初始化成功则返回 NGX_OK，否则返回 NGX_ERROR。
+ */
 ngx_int_t
 ngx_event_timer_init(ngx_log_t *log)
 {
+    // 使用红黑树初始化事件计时器
     ngx_rbtree_init(&ngx_event_timer_rbtree, &ngx_event_timer_sentinel,
                     ngx_rbtree_insert_timer_value);
 
     return NGX_OK;
 }
+
 
 
 ngx_msec_t

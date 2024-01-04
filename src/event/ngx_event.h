@@ -252,24 +252,41 @@ struct ngx_event_aio_s {
 #endif
 
 
+/*
+ * 该结构定义了一组用于事件处理的函数指针，这些函数包括事件的添加、删除、启用、禁用、连接的添加和删除、通知处理等操作。
+ */
 typedef struct {
+    // 添加事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*add)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
+
+    // 删除事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*del)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
 
+    // 启用事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*enable)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
+
+    // 禁用事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*disable)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
 
+    // 添加连接的回调函数，参数包括连接对象
     ngx_int_t  (*add_conn)(ngx_connection_t *c);
+
+    // 删除连接的回调函数，参数包括连接对象、标志位
     ngx_int_t  (*del_conn)(ngx_connection_t *c, ngx_uint_t flags);
 
+    // 通知事件处理的回调函数，参数包括事件处理器
     ngx_int_t  (*notify)(ngx_event_handler_pt handler);
 
-    ngx_int_t  (*process_events)(ngx_cycle_t *cycle, ngx_msec_t timer,
-                                 ngx_uint_t flags);
+    // 处理事件的回调函数，参数包括事件循环对象、定时器时间、标志位
+    ngx_int_t  (*process_events)(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags);
 
+    // 初始化事件的回调函数，参数包括事件循环对象、定时器时间
     ngx_int_t  (*init)(ngx_cycle_t *cycle, ngx_msec_t timer);
+
+    // 结束事件的回调函数，参数包括事件循环对象
     void       (*done)(ngx_cycle_t *cycle);
 } ngx_event_actions_t;
+
 
 
 extern ngx_event_actions_t   ngx_event_actions;
@@ -545,14 +562,18 @@ typedef struct {
 
 
 
+/**
+ * ngx_event_module_t 结构定义，表示事件模块的基本信息和回调函数。
+ */
 typedef struct {
-    ngx_str_t              *name;
+    ngx_str_t              *name;            /* 模块名称 */
 
-    void                 *(*create_conf)(ngx_cycle_t *cycle);
-    char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+    void                 *(*create_conf)(ngx_cycle_t *cycle);  /* 创建模块配置结构的回调函数 */
+    char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);  /* 初始化模块配置的回调函数 */
 
-    ngx_event_actions_t     actions;
+    ngx_event_actions_t     actions;         /* 事件模块的动作集合 */
 } ngx_event_module_t;
+
 
 
 extern ngx_atomic_t          *ngx_connection_counter;

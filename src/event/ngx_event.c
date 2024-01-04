@@ -200,19 +200,23 @@ static ngx_event_module_t ngx_event_core_module_ctx = {
 
     {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL}};
 
+/**
+ * ngx_event_core_module 模块定义
+ */
 ngx_module_t ngx_event_core_module = {
-    NGX_MODULE_V1,
-    &ngx_event_core_module_ctx, /* module context */
-    ngx_event_core_commands,    /* module directives */
-    NGX_EVENT_MODULE,           /* module type */
-    NULL,                       /* init master */
-    ngx_event_module_init,      /* init module */
-    ngx_event_process_init,     /* init process */
-    NULL,                       /* init thread */
-    NULL,                       /* exit thread */
-    NULL,                       /* exit process */
-    NULL,                       /* exit master */
-    NGX_MODULE_V1_PADDING};
+    NGX_MODULE_V1,              /* 标识 ngx_module_t 结构的版本号 */
+    &ngx_event_core_module_ctx, /* 模块上下文 */
+    ngx_event_core_commands,    /* 模块指令集 */
+    NGX_EVENT_MODULE,           /* 模块类型 */
+    NULL,                       /* 初始化 master 过程 */
+    ngx_event_module_init,      /* 初始化模块过程 */
+    ngx_event_process_init,     /* 初始化进程过程 */
+    NULL,                       /* 初始化线程过程 */
+    NULL,                       /* 退出线程过程 */
+    NULL,                       /* 退出进程过程 */
+    NULL,                       /* 退出 master 过程 */
+    NGX_MODULE_V1_PADDING       /* 填充字段 */
+};
 
 /*
  * 描述：处理事件和定时器。
@@ -975,11 +979,17 @@ ngx_event_module_init(ngx_cycle_t *cycle)
 
 #if !(NGX_WIN32)
 
+/*
+ * 定时器信号处理函数，当定时器触发时被调用。
+ * 参数 signo 表示触发信号的类型。
+ */
 static void
 ngx_timer_signal_handler(int signo)
 {
+    // 设置全局标志 ngx_event_timer_alarm 为1，表示定时器已触发
     ngx_event_timer_alarm = 1;
 
+    // 调试日志，记录定时器信号触发的事件，可选编译开关控制是否打印
 #if 1
     ngx_log_debug0(NGX_LOG_DEBUG_EVENT, ngx_cycle->log, 0, "timer signal");
 #endif
@@ -987,20 +997,32 @@ ngx_timer_signal_handler(int signo)
 
 #endif
 
+/**
+ * 初始化当前循环的事件处理。
+ *
+ * @param cycle 当前循环的 ngx_cycle_t 结构。
+ *
+ * @return 如果初始化成功则返回 NGX_OK，否则返回 NGX_ERROR。
+ */
 static ngx_int_t
 ngx_event_process_init(ngx_cycle_t *cycle)
 {
-    ngx_uint_t m, i;
-    ngx_event_t *rev, *wev;
-    ngx_listening_t *ls;
-    ngx_connection_t *c, *next, *old;
-    ngx_core_conf_t *ccf;
-    ngx_event_conf_t *ecf;
-    ngx_event_module_t *module;
+    /**
+     * 定义一些在 ngx_event_process_init 函数中会使用的变量。
+     */
+    ngx_uint_t m, i;                  /* 循环变量 */
+    ngx_event_t *rev, *wev;           /* 读事件和写事件指针 */
+    ngx_listening_t *ls;              /* 监听套接字结构指针 */
+    ngx_connection_t *c, *next, *old; /* 连接结构指针 */
+    ngx_core_conf_t *ccf;             /* 核心配置结构指针 */
+    ngx_event_conf_t *ecf;            /* 事件模块配置结构指针 */
+    ngx_event_module_t *module;       /* 事件模块指针 */
 
+    // 获取核心配置和事件核心配置
     ccf = (ngx_core_conf_t *)ngx_get_conf(cycle->conf_ctx, ngx_core_module);
     ecf = ngx_event_get_conf(cycle->conf_ctx, ngx_event_core_module);
 
+    // 根据配置初始化接收互斥锁设置
     if (ccf->master && ccf->worker_processes > 1 && ecf->accept_mutex)
     {
         ngx_use_accept_mutex = 1;
@@ -1013,27 +1035,25 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
 #if (NGX_WIN32)
-
-    /*
-     * disable accept mutex on win32 as it may cause deadlock if
-     * grabbed by a process which can't accept connections
-     */
-
+    // 在 Win32 上禁用接收互斥锁，以免引发死锁问题
     ngx_use_accept_mutex = 0;
 
 #endif
 
     ngx_use_exclusive_accept = 0;
 
+    // 初始化用于已发布事件的队列
     ngx_queue_init(&ngx_posted_accept_events);
     ngx_queue_init(&ngx_posted_next_events);
     ngx_queue_init(&ngx_posted_events);
 
+    // 初始化事件计时器
     if (ngx_event_timer_init(cycle->log) == NGX_ERROR)
     {
         return NGX_ERROR;
     }
 
+    // 遍历模块以找到选择的事件模块
     for (m = 0; cycle->modules[m]; m++)
     {
         if (cycle->modules[m]->type != NGX_EVENT_MODULE)
@@ -1048,60 +1068,80 @@ ngx_event_process_init(ngx_cycle_t *cycle)
 
         module = cycle->modules[m]->ctx;
 
+        // 初始化选择的事件模块
         if (module->actions.init(cycle, ngx_timer_resolution) != NGX_OK)
         {
-            /* fatal */
+            /* 致命错误 */
             exit(2);
         }
 
         break;
     }
 
-#if !(NGX_WIN32)
-
+    /*
+     * 在非 Win32 系统上，如果定义了 ngx_timer_resolution 并且未使用定时器事件，则配置定时器分辨率和信号处理程序。
+     */
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT))
     {
+        // 定义 sigaction 结构体用于设置信号处理程序
         struct sigaction sa;
+        // 定义 itimerval 结构体用于设置定时器的时间间隔
         struct itimerval itv;
 
+        // 清空 sa 结构体，并设置信号处理函数为 ngx_timer_signal_handler
         ngx_memzero(&sa, sizeof(struct sigaction));
         sa.sa_handler = ngx_timer_signal_handler;
         sigemptyset(&sa.sa_mask);
 
+        // 设置 SIGALRM 信号的处理程序为 ngx_timer_signal_handler
         if (sigaction(SIGALRM, &sa, NULL) == -1)
         {
+            // 如果设置失败，则记录错误日志并返回 NGX_ERROR
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "sigaction(SIGALRM) failed");
+                          "sigaction(SIGALRM) 失败");
             return NGX_ERROR;
         }
 
+        // 设置定时器的时间间隔，it_interval 为定时器的重复间隔，it_value 为定时器第一次触发的时间
         itv.it_interval.tv_sec = ngx_timer_resolution / 1000;
         itv.it_interval.tv_usec = (ngx_timer_resolution % 1000) * 1000;
         itv.it_value.tv_sec = ngx_timer_resolution / 1000;
         itv.it_value.tv_usec = (ngx_timer_resolution % 1000) * 1000;
 
+        // 设置定时器，使用 ITIMER_REAL 表示实时定时器
         if (setitimer(ITIMER_REAL, &itv, NULL) == -1)
         {
+            // 如果设置失败，则记录错误日志
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "setitimer() failed");
+                          "setitimer() 失败");
         }
     }
 
+    /*
+     * 如果使用文件描述符事件，则获取系统资源限制并分配相应的内存。
+     */
     if (ngx_event_flags & NGX_USE_FD_EVENT)
     {
+        // 定义结构体 rlimit 用于存储系统资源限制信息
         struct rlimit rlmt;
 
+        // 获取系统对文件描述符的限制信息
         if (getrlimit(RLIMIT_NOFILE, &rlmt) == -1)
         {
+            // 获取失败时记录错误日志并返回 NGX_ERROR
             ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
-                          "getrlimit(RLIMIT_NOFILE) failed");
+                          "getrlimit(RLIMIT_NOFILE) 失败");
             return NGX_ERROR;
         }
 
+        // 将系统限制的文件描述符数设置为当前进程的文件描述符数
         cycle->files_n = (ngx_uint_t)rlmt.rlim_cur;
 
+        // 分配内存以存储 ngx_connection_t 指针的数组，大小为文件描述符数
         cycle->files = ngx_calloc(sizeof(ngx_connection_t *) * cycle->files_n,
                                   cycle->log);
+
+        // 分配内存失败时返回 NGX_ERROR
         if (cycle->files == NULL)
         {
             return NGX_ERROR;
@@ -1109,17 +1149,17 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     }
 
 #else
-
+    // 在 Win32 上，处理定时器分辨率配置
     if (ngx_timer_resolution && !(ngx_event_flags & NGX_USE_TIMER_EVENT))
     {
         ngx_log_error(NGX_LOG_WARN, cycle->log, 0,
-                      "the \"timer_resolution\" directive is not supported "
-                      "with the configured event method, ignored");
+                      "the \"timer_resolution\" 指令在配置的事件方法中不受支持，已忽略");
         ngx_timer_resolution = 0;
     }
 
 #endif
 
+    // 分配连接数组、读事件数组和写事件数组的内存
     cycle->connections =
         ngx_alloc(sizeof(ngx_connection_t) * cycle->connection_n, cycle->log);
     if (cycle->connections == NULL)
@@ -1159,6 +1199,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     i = cycle->connection_n;
     next = NULL;
 
+    // 为每个连接初始化连接和事件
     do
     {
         i--;
@@ -1174,13 +1215,12 @@ ngx_event_process_init(ngx_cycle_t *cycle)
     cycle->free_connections = next;
     cycle->free_connection_n = cycle->connection_n;
 
-    /* for each listening socket */
-
+    // 处理每个监听套接字
     ls = cycle->listening.elts;
     for (i = 0; i < cycle->listening.nelts; i++)
     {
-
 #if (NGX_HAVE_REUSEPORT)
+        // 如果使用 reuseport，则跳过从其他 worker 复用的监听套接字
         if (ls[i].reuseport && ls[i].worker != ngx_worker)
         {
             continue;
@@ -1209,14 +1249,13 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         rev->deferred_accept = ls[i].deferred_accept;
 #endif
 
+        // 根据操作系统处理事件
         if (!(ngx_event_flags & NGX_USE_IOCP_EVENT) && cycle->old_cycle)
         {
             if (ls[i].previous)
             {
-
                 /*
-                 * delete the old accept events that were bound to
-                 * the old cycle read events array
+                 * 删除与旧循环读事件数组绑定的旧的接受事件
                  */
 
                 old = ls[i].previous->connection;
@@ -1231,7 +1270,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
         }
 
 #if (NGX_WIN32)
-
+        // 处理 Win32 特定的事件配置
         if (ngx_event_flags & NGX_USE_IOCP_EVENT)
         {
             ngx_iocp_conf_t *iocpcf;
@@ -1243,7 +1282,7 @@ ngx_event_process_init(ngx_cycle_t *cycle)
                 continue;
             }
 
-            if (ngx_add_event(rev, 0, NGX_IOCP_ACCEPT) == NGX_ERROR)
+            if (ngx_add_event(rev, 0, NGX_IOCP_ACCEPT)
             {
                 return NGX_ERROR;
             }
