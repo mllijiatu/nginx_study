@@ -51,8 +51,26 @@
 
 #if !(NGX_WIN32)
 
+/*
+ * ngx_signal_helper - 信号宏辅助函数，用于将信号值转换为SIG开头的宏
+ *
+ * 该宏辅助函数用于将信号值转换为对应的SIG开头的宏，例如 ngx_signal_helper(QUIT) 会被展开为 SIGQUIT。
+ *
+ * 参数:
+ *     n - 信号值
+ */
 #define ngx_signal_helper(n)     SIG##n
+
+/*
+ * ngx_signal_value - 信号值宏，用于将信号值转换为SIG开头的宏
+ *
+ * 该宏用于将信号值转换为对应的SIG开头的宏，通过调用 ngx_signal_helper 辅助函数实现。
+ *
+ * 参数:
+ *     n - 信号值
+ */
 #define ngx_signal_value(n)      ngx_signal_helper(n)
+
 
 #define ngx_random               random
 
@@ -75,9 +93,27 @@
 
 #endif
 
-typedef intptr_t        ngx_int_t;
-typedef uintptr_t       ngx_uint_t;
-typedef intptr_t        ngx_flag_t;
+/*
+ * 类型定义: ngx_fd_t
+ * ----------------
+ * 描述: 定义了ngx_fd_t类型，表示文件描述符的数据类型。
+ */
+typedef int                      ngx_fd_t;
+
+/*
+ * 结构体定义: ngx_file_info_t
+ * --------------------------
+ * 描述: 定义了ngx_file_info_t结构体，用于存储文件信息，具体内容可能依赖于平台。
+ */
+typedef struct stat              ngx_file_info_t;
+
+/*
+ * 类型定义: ngx_file_uniq_t
+ * ------------------------
+ * 描述: 定义了ngx_file_uniq_t类型，表示文件的唯一标识符的数据类型。
+ */
+typedef ino_t                    ngx_file_uniq_t;
+
 
 
 #define NGX_INT32_LEN   (sizeof("-2147483648") - 1)

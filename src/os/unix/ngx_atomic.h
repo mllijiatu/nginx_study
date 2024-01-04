@@ -268,12 +268,47 @@ typedef volatile ngx_atomic_uint_t  ngx_atomic_t;
 
 #define NGX_HAVE_ATOMIC_OPS  0
 
+/*
+ * 类型定义: ngx_atomic_int_t
+ * ------------------------
+ * 描述: 定义了ngx_atomic_int_t类型，表示32位有符号整数。
+ */
 typedef int32_t                     ngx_atomic_int_t;
+
+/*
+ * 类型定义: ngx_atomic_uint_t
+ * -------------------------
+ * 描述: 定义了ngx_atomic_uint_t类型，表示32位无符号整数。
+ */
 typedef uint32_t                    ngx_atomic_uint_t;
+
+/*
+ * 类型定义: ngx_atomic_t
+ * ---------------------
+ * 描述: 定义了ngx_atomic_t类型，表示32位无符号整数，用于实现原子操作。
+ *      在一些平台上，该类型可能会被定义为volatile ngx_atomic_uint_t。
+ */
 typedef volatile ngx_atomic_uint_t  ngx_atomic_t;
+
+/*
+ * 宏定义: NGX_ATOMIC_T_LEN
+ * -----------------------
+ * 描述: 定义了NGX_ATOMIC_T_LEN宏，表示ngx_atomic_t类型的字符串长度。
+ */
 #define NGX_ATOMIC_T_LEN            (sizeof("-2147483648") - 1)
 
 
+
+/*
+ * 内联函数: ngx_atomic_cmp_set
+ * ---------------------------
+ * 描述: 比较并设置原子变量的值，如果当前值等于旧值，则设置为新值。
+ * 参数:
+ *   - ngx_atomic_t *lock: 指向原子变量的指针。
+ *   - ngx_atomic_uint_t old: 旧值，与当前原子变量的值比较。
+ *   - ngx_atomic_uint_t set: 新值，如果当前原子变量的值等于旧值，则设置为新值。
+ * 返回: 如果设置成功，返回1；否则，返回0。
+ */
 static ngx_inline ngx_atomic_uint_t
 ngx_atomic_cmp_set(ngx_atomic_t *lock, ngx_atomic_uint_t old,
     ngx_atomic_uint_t set)
@@ -285,6 +320,7 @@ ngx_atomic_cmp_set(ngx_atomic_t *lock, ngx_atomic_uint_t old,
 
     return 0;
 }
+
 
 
 static ngx_inline ngx_atomic_int_t

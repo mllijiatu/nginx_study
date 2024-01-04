@@ -62,8 +62,20 @@ typedef struct {
 
 #else
 
+/*
+ * 宏定义: ngx_open_file
+ * --------------------
+ * 描述: 定义了ngx_open_file宏，用于打开文件。
+ * 参数:
+ *   - name: 文件名称。
+ *   - mode: 打开文件的模式，例如：O_RDONLY、O_WRONLY等。
+ *   - create: 创建文件的标志，例如：O_CREAT、O_EXCL等。
+ *   - access: 文件权限掩码。
+ * 返回: 文件描述符。
+ */
 #define ngx_open_file(name, mode, create, access)                            \
-    open((const char *) name, mode|create, access)
+    open((const char *) name, mode | create, access)
+
 
 #endif
 
@@ -110,8 +122,23 @@ typedef struct {
 #define ngx_close_file_n         "close()"
 
 
+/*
+ * 宏定义: ngx_delete_file
+ * ----------------------
+ * 描述: 定义了ngx_delete_file宏，用于删除文件。
+ * 参数:
+ *   - name: 文件名称。
+ * 返回: unlink系统调用的返回值。
+ */
 #define ngx_delete_file(name)    unlink((const char *) name)
+
+/*
+ * 宏定义: ngx_delete_file_n
+ * ------------------------
+ * 描述: 定义了ngx_delete_file_n宏，表示"unlink()"字符串。
+ */
 #define ngx_delete_file_n        "unlink()"
+
 
 
 ngx_fd_t ngx_open_tempfile(u_char *name, ngx_uint_t persistent,

@@ -15,7 +15,83 @@
 
 typedef struct ngx_listening_s  ngx_listening_t;
 
+/**
+ * ngx_listening_s结构体表示一个监听对象，用于描述一个监听套接字。
+ */
 struct ngx_listening_s {
+    ngx_socket_t        fd;               /* 套接字文件描述符 */
+
+    struct sockaddr    *sockaddr;         /* 监听套接字地址 */
+    socklen_t           socklen;          /* sockaddr结构体的大小 */
+    size_t              addr_text_max_len; /* 地址文本的最大长度 */
+    ngx_str_t           addr_text;        /* 地址的文本表示 */
+
+    int                 type;             /* 套接字类型 */
+
+    int                 backlog;          /* 监听套接字的待处理连接队列长度 */
+    int                 rcvbuf;           /* TCP接收缓冲区大小 */
+    int                 sndbuf;           /* TCP发送缓冲区大小 */
+
+#if (NGX_HAVE_KEEPALIVE_TUNABLE)
+    int                 keepidle;         /* 开启TCP keepalive功能的空闲时间 */
+    int                 keepintvl;        /* 两次探测的间隔时间 */
+    int                 keepcnt;          /* 判定断开前的探测次数 */
+#endif
+
+    ngx_connection_handler_pt   handler;   /* 处理已接受连接的回调函数 */
+
+    void               *servers;          /* 存储监听对象的数组，如ngx_http_in_addr_t数组 */
+
+    ngx_log_t           log;              /* 日志对象 */
+    ngx_log_t          *logp;             /* 指向日志对象的指针 */
+
+    size_t              pool_size;        /* 内存池大小 */
+    size_t              post_accept_buffer_size; /* 接受连接后的缓冲区大小 */
+
+    ngx_listening_t    *previous;         /* 前一个监听对象 */
+    ngx_connection_t   *connection;       /* 指向当前正在处理的连接 */
+
+    ngx_rbtree_t        rbtree;           /* 红黑树 */
+    ngx_rbtree_node_t   sentinel;         /* 哨兵节点 */
+
+    ngx_uint_t          worker;           /* 用于负载均衡的工作进程编号 */
+
+    unsigned            open:1;           /* 是否打开监听 */
+    unsigned            remain:1;         /* 是否保持监听 */
+    unsigned            ignore:1;         /* 是否忽略当前监听 */
+
+    unsigned            bound:1;          /* 是否已绑定 */
+    unsigned            inherited:1;      /* 是否从父进程继承而来 */
+    unsigned            nonblocking_accept:1; /* 是否采用非阻塞方式接受连接 */
+    unsigned            listen:1;         /* 是否处于监听状态 */
+    unsigned            nonblocking:1;    /* 是否采用非阻塞方式处理连接 */
+    unsigned            shared:1;         /* 是否在多线程或多进程间共享 */
+    unsigned            addr_ntop:1;      /* 是否进行地址转换 */
+    unsigned            wildcard:1;       /* 是否使用通配符地址 */
+
+#if (NGX_HAVE_INET6)
+    unsigned            ipv6only:1;       /* 是否只支持IPv6 */
+#endif
+    unsigned            reuseport:1;      /* 是否启用端口复用 */
+    unsigned            add_reuseport:1;  /* 是否附加端口复用 */
+    unsigned            keepalive:2;      /* TCP keepalive配置 */
+
+    unsigned            deferred_accept:1;    /* 是否延迟接受连接 */
+    unsigned            delete_deferred:1;    /* 是否删除延迟接受连接 */
+    unsigned            add_deferred:1;       /* 是否添加延迟接受连接 */
+#if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
+    char               *accept_filter;    /* 接受过滤器 */
+#endif
+#if (NGX_HAVE_SETFIB)
+    int                 setfib;           /* 设置FIB值 */
+#endif
+
+#if (NGX_HAVE_TCP_FASTOPEN)
+    int                 fastopen;         /* TCP Fast Open配置 */
+#endif
+
+};
+
     ngx_socket_t        fd;
 
     struct sockaddr    *sockaddr;

@@ -13,27 +13,42 @@
 #include <ngx_setproctitle.h>
 
 
-typedef pid_t       ngx_pid_t;
+/*
+ * ngx_pid_t - Nginx 进程ID类型定义
+ */
+typedef pid_t ngx_pid_t;
 
+/*
+ * NGX_INVALID_PID - 无效的进程ID值
+ */
 #define NGX_INVALID_PID  -1
 
+/*
+ * ngx_spawn_proc_pt - 进程执行函数指针类型定义
+ */
 typedef void (*ngx_spawn_proc_pt) (ngx_cycle_t *cycle, void *data);
 
+/*
+ * ngx_process_t - 进程结构体
+ *
+ * 该结构体用于描述一个Nginx进程的相关信息，包括进程ID、进程状态、通信通道等。
+ */
 typedef struct {
-    ngx_pid_t           pid;
-    int                 status;
-    ngx_socket_t        channel[2];
+    ngx_pid_t           pid;          // 进程ID
+    int                 status;       // 进程状态
+    ngx_socket_t        channel[2];   // 进程通信通道
 
-    ngx_spawn_proc_pt   proc;
-    void               *data;
-    char               *name;
+    ngx_spawn_proc_pt   proc;         // 进程执行函数指针
+    void               *data;         // 传递给进程执行函数的参数
+    char               *name;         // 进程名称
 
-    unsigned            respawn:1;
-    unsigned            just_spawn:1;
-    unsigned            detached:1;
-    unsigned            exiting:1;
-    unsigned            exited:1;
+    unsigned            respawn:1;    // 是否需要重新创建进程
+    unsigned            just_spawn:1; // 是否刚刚创建的进程
+    unsigned            detached:1;   // 是否为后台进程
+    unsigned            exiting:1;    // 进程正在退出
+    unsigned            exited:1;     // 进程已经退出
 } ngx_process_t;
+
 
 
 typedef struct {

@@ -30,8 +30,18 @@ typedef struct ngx_proxy_protocol_s  ngx_proxy_protocol_t;
 typedef struct ngx_ssl_connection_s  ngx_ssl_connection_t;
 typedef struct ngx_udp_connection_s  ngx_udp_connection_t;
 
+/*
+ * 函数指针类型 ngx_event_handler_pt 的定义
+ * 该函数指针类型表示一个处理 ngx_event_t 事件的函数，参数为指向 ngx_event_t 结构体的指针。
+ */
 typedef void (*ngx_event_handler_pt)(ngx_event_t *ev);
+
+/*
+ * 函数指针类型 ngx_connection_handler_pt 的定义
+ * 该函数指针类型表示一个处理 ngx_connection_t 连接的函数，参数为指向 ngx_connection_t 结构体的指针。
+ */
 typedef void (*ngx_connection_handler_pt)(ngx_connection_t *c);
+
 
 
 #define  NGX_OK          0

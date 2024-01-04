@@ -27,7 +27,96 @@ typedef struct {
 #endif
 
 
+/*
+ * 事件结构体 ngx_event_s 的定义
+ */
 struct ngx_event_s {
+    void            *data;              /* 事件相关的数据指针 */
+
+    unsigned         write:1;           /* 写事件标志位 */
+
+    unsigned         accept:1;          /* 接受连接事件标志位 */
+
+    /* 用于检测在 kqueue 和 epoll 中的陈旧事件 */
+    unsigned         instance:1;        /* 事件实例标志位 */
+
+    /*
+     * 事件已经传递给内核，或者将要传递给内核；
+     * 在 aio 模式下，表示操作已经提交。
+     */
+    unsigned         active:1;          /* 事件激活标志位 */
+
+    unsigned         disabled:1;        /* 事件禁用标志位 */
+
+    /* 就绪事件；在 aio 模式下，0 表示不能提交任何操作 */
+    unsigned         ready:1;           /* 事件就绪标志位 */
+
+    unsigned         oneshot:1;         /* 一次性事件标志位 */
+
+    /* aio 操作已经完成 */
+    unsigned         complete:1;        /* 事件完成标志位 */
+
+    unsigned         eof:1;             /* 事件发生EOF标志位 */
+    unsigned         error:1;           /* 事件发生错误标志位 */
+
+    unsigned         timedout:1;        /* 事件超时标志位 */
+    unsigned         timer_set:1;       /* 定时器已设置标志位 */
+
+    unsigned         delayed:1;         /* 延迟事件标志位 */
+
+    unsigned         deferred_accept:1; /* 延迟接受标志位 */
+
+    /* kqueue、epoll 或者在 aio 链操作中报告的挂起的 EOF 事件 */
+    unsigned         pending_eof:1;     /* 挂起的 EOF 事件标志位 */
+
+    unsigned         posted:1;          /* 事件已经添加到事件队列标志位 */
+
+    unsigned         closed:1;          /* 事件已关闭标志位 */
+
+    /* 用于在工作线程退出时测试 */
+    unsigned         channel:1;         /* 通道标志位 */
+    unsigned         resolver:1;        /* 解析器标志位 */
+
+    unsigned         cancelable:1;      /* 可取消标志位 */
+
+#if (NGX_HAVE_KQUEUE)
+    unsigned         kq_vnode:1;       /* kqueue 专用标志位 */
+
+    /* kqueue 专用：kqueue 报告的挂起 errno */
+    int              kq_errno;
+#endif
+
+    /*
+     * kqueue 专用：
+     *   accept:     等待被接受的套接字数量
+     *   read:       事件就绪时要读取的字节数，或者在设置了 NGX_LOWAT_EVENT 标志位时为低水位
+     *   write:      事件就绪时缓冲区中的可用空间，或者在设置了 NGX_LOWAT_EVENT 标志位时为低水位
+     *
+     * iocp: TODO
+     *
+     * 其他情况：
+     *   accept:     如果支持多个接受，为1，否则为0
+     *   read:       事件就绪时要读取的字节数，如果不知道，则为-1
+     */
+    int              available;
+
+    ngx_event_handler_pt  handler;       /* 事件处理函数指针 */
+
+
+#if (NGX_HAVE_IOCP)
+    ngx_event_ovlp_t ovlp;               /* iocp 专用 */
+#endif
+
+    ngx_uint_t       index;              /* 事件在事件数组中的索引 */
+
+    ngx_log_t       *log;                /* 日志对象指针 */
+
+    ngx_rbtree_node_t   timer;           /* 定时器红黑树节点 */
+
+    /* 事件队列 */
+    ngx_queue_t      queue;
+};
+
     void            *data;
 
     unsigned         write:1;
@@ -163,24 +252,41 @@ struct ngx_event_aio_s {
 #endif
 
 
+/*
+ * 该结构定义了一组用于事件处理的函数指针，这些函数包括事件的添加、删除、启用、禁用、连接的添加和删除、通知处理等操作。
+ */
 typedef struct {
+    // 添加事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*add)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
+
+    // 删除事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*del)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
 
+    // 启用事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*enable)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
+
+    // 禁用事件的回调函数，参数包括事件对象、事件类型、标志位
     ngx_int_t  (*disable)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
 
+    // 添加连接的回调函数，参数包括连接对象
     ngx_int_t  (*add_conn)(ngx_connection_t *c);
+
+    // 删除连接的回调函数，参数包括连接对象、标志位
     ngx_int_t  (*del_conn)(ngx_connection_t *c, ngx_uint_t flags);
 
+    // 通知事件处理的回调函数，参数包括事件处理器
     ngx_int_t  (*notify)(ngx_event_handler_pt handler);
 
-    ngx_int_t  (*process_events)(ngx_cycle_t *cycle, ngx_msec_t timer,
-                                 ngx_uint_t flags);
+    // 处理事件的回调函数，参数包括事件循环对象、定时器时间、标志位
+    ngx_int_t  (*process_events)(ngx_cycle_t *cycle, ngx_msec_t timer, ngx_uint_t flags);
 
+    // 初始化事件的回调函数，参数包括事件循环对象、定时器时间
     ngx_int_t  (*init)(ngx_cycle_t *cycle, ngx_msec_t timer);
+
+    // 结束事件的回调函数，参数包括事件循环对象
     void       (*done)(ngx_cycle_t *cycle);
 } ngx_event_actions_t;
+
 
 
 extern ngx_event_actions_t   ngx_event_actions;
@@ -425,32 +531,49 @@ extern ngx_os_io_t  ngx_io;
 #define NGX_EVENT_MODULE      0x544E5645  /* "EVNT" */
 #define NGX_EVENT_CONF        0x02000000
 
-
+/*
+ * 结构体: ngx_event_conf_t
+ * -----------------------
+ * 描述: 定义了ngx_event_core模块的配置结构体，用于存储event_core模块的各种配置参数。
+ * 参数:
+ *   - ngx_uint_t connections: 最大连接数
+ *   - ngx_uint_t use: 事件模块的使用方式
+ *   - ngx_flag_t multi_accept: 是否允许多个连接同时接受
+ *   - ngx_flag_t accept_mutex: 是否开启连接互斥锁
+ *   - ngx_msec_t accept_mutex_delay: 互斥锁延迟时间
+ *   - u_char *name: 事件核心的名称
+ *   - ngx_array_t debug_connection: 调试连接数组（仅在调试模式下有效）
+ * 返回: ngx_event_conf_t结构体，包含了事件核心模块的各项配置信息。
+ */
 typedef struct {
-    ngx_uint_t    connections;
-    ngx_uint_t    use;
+    ngx_uint_t    connections;             /* 最大连接数 */
+    ngx_uint_t    use;                     /* 事件模块的使用方式 */
 
-    ngx_flag_t    multi_accept;
-    ngx_flag_t    accept_mutex;
+    ngx_flag_t    multi_accept;            /* 是否允许多个连接同时接受 */
+    ngx_flag_t    accept_mutex;            /* 是否开启连接互斥锁 */
 
-    ngx_msec_t    accept_mutex_delay;
-
-    u_char       *name;
+    ngx_msec_t    accept_mutex_delay;      /* 互斥锁延迟时间 */
+    u_char       *name;                    /* 事件核心的名称 */
 
 #if (NGX_DEBUG)
-    ngx_array_t   debug_connection;
+    ngx_array_t   debug_connection;        /* 调试连接数组（仅在调试模式下有效） */
 #endif
 } ngx_event_conf_t;
 
 
+
+/**
+ * ngx_event_module_t 结构定义，表示事件模块的基本信息和回调函数。
+ */
 typedef struct {
-    ngx_str_t              *name;
+    ngx_str_t              *name;            /* 模块名称 */
 
-    void                 *(*create_conf)(ngx_cycle_t *cycle);
-    char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
+    void                 *(*create_conf)(ngx_cycle_t *cycle);  /* 创建模块配置结构的回调函数 */
+    char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);  /* 初始化模块配置的回调函数 */
 
-    ngx_event_actions_t     actions;
+    ngx_event_actions_t     actions;         /* 事件模块的动作集合 */
 } ngx_event_module_t;
+
 
 
 extern ngx_atomic_t          *ngx_connection_counter;
@@ -488,8 +611,17 @@ extern ngx_module_t           ngx_events_module;
 extern ngx_module_t           ngx_event_core_module;
 
 
+/*
+ * 宏定义: ngx_event_get_conf
+ * -------------------------
+ * 描述: 获取事件模块的配置结构体。
+ * 参数:
+ *   - conf_ctx: 配置上下文。
+ *   - module: 事件模块。
+ * 返回: 事件模块的配置结构体。
+ */
 #define ngx_event_get_conf(conf_ctx, module)                                  \
-             (*(ngx_get_conf(conf_ctx, ngx_events_module))) [module.ctx_index]
+             (*(ngx_get_conf(conf_ctx, ngx_events_module)))[module.ctx_index]
 
 
 

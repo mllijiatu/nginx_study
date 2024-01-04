@@ -19,14 +19,18 @@ typedef ngx_int_t   ngx_rbtree_key_int_t;
 
 typedef struct ngx_rbtree_node_s  ngx_rbtree_node_t;
 
+/*
+ * 红黑树节点结构体 ngx_rbtree_node_s 的定义
+ */
 struct ngx_rbtree_node_s {
-    ngx_rbtree_key_t       key;
-    ngx_rbtree_node_t     *left;
-    ngx_rbtree_node_t     *right;
-    ngx_rbtree_node_t     *parent;
-    u_char                 color;
-    u_char                 data;
+    ngx_rbtree_key_t       key;      /* 节点关键字，用于排序 */
+    ngx_rbtree_node_t     *left;     /* 指向左子节点的指针 */
+    ngx_rbtree_node_t     *right;    /* 指向右子节点的指针 */
+    ngx_rbtree_node_t     *parent;   /* 指向父节点的指针 */
+    u_char                 color;    /* 节点颜色，红或黑 */
+    u_char                 data;     /* 节点数据，可根据需要使用 */
 };
+
 
 
 typedef struct ngx_rbtree_s  ngx_rbtree_t;
@@ -34,11 +38,15 @@ typedef struct ngx_rbtree_s  ngx_rbtree_t;
 typedef void (*ngx_rbtree_insert_pt) (ngx_rbtree_node_t *root,
     ngx_rbtree_node_t *node, ngx_rbtree_node_t *sentinel);
 
+/*
+ * 红黑树结构体 ngx_rbtree_s 的定义
+ */
 struct ngx_rbtree_s {
-    ngx_rbtree_node_t     *root;
-    ngx_rbtree_node_t     *sentinel;
-    ngx_rbtree_insert_pt   insert;
+    ngx_rbtree_node_t     *root;        /* 指向红黑树的根节点 */
+    ngx_rbtree_node_t     *sentinel;    /* 指向红黑树的哨兵节点（即空节点） */
+    ngx_rbtree_insert_pt   insert;      /* 红黑树节点插入函数指针 */
 };
+
 
 
 /**

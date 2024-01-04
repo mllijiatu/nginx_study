@@ -199,42 +199,69 @@ ngx_shmtx_wakeup(ngx_shmtx_t *mtx)
 #else
 
 
+/*
+ * 函数: ngx_int_t ngx_shmtx_create
+ * ------------------------------
+ * 描述: 创建或打开具有给定名称的互斥锁，并关联到共享内存地址。
+ * 参数: 
+ *   - ngx_shmtx_t *mtx: ngx_shmtx_t结构体指针，用于存储互斥锁相关信息。
+ *   - ngx_shmtx_sh_t *addr: ngx_shmtx_sh_t结构体指针，用于共享内存地址。
+ *   - u_char *name: 互斥锁的名称。
+ * 返回: NGX_OK 表示成功，NGX_ERROR 表示失败。
+ */
 ngx_int_t
 ngx_shmtx_create(ngx_shmtx_t *mtx, ngx_shmtx_sh_t *addr, u_char *name)
 {
+    /* 如果互斥锁已经有名称了，则先销毁原来的互斥锁 */
     if (mtx->name) {
 
+        /* 如果新名称与原名称相同，则直接返回成功 */
         if (ngx_strcmp(name, mtx->name) == 0) {
             mtx->name = name;
             return NGX_OK;
         }
 
+        /* 销毁原来的互斥锁 */
         ngx_shmtx_destroy(mtx);
     }
 
+    /* 打开或创建具有给定名称的文件 */
     mtx->fd = ngx_open_file(name, NGX_FILE_RDWR, NGX_FILE_CREATE_OR_OPEN,
                             NGX_FILE_DEFAULT_ACCESS);
 
+    /* 打开或创建文件失败，记录错误日志并返回失败 */
     if (mtx->fd == NGX_INVALID_FILE) {
         ngx_log_error(NGX_LOG_EMERG, ngx_cycle->log, ngx_errno,
                       ngx_open_file_n " \"%s\" failed", name);
         return NGX_ERROR;
     }
 
+    /* 删除具有给定名称的文件，避免文件占用 */
     if (ngx_delete_file(name) == NGX_FILE_ERROR) {
         ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, ngx_errno,
                       ngx_delete_file_n " \"%s\" failed", name);
     }
 
+    /* 记录互斥锁的名称 */
     mtx->name = name;
 
     return NGX_OK;
 }
 
 
+
+/*
+ * 函数: ngx_shmtx_destroy
+ * ----------------------
+ * 描述: 销毁互斥锁，关闭与互斥锁关联的文件描述符。
+ * 参数:
+ *   - ngx_shmtx_t *mtx: ngx_shmtx_t结构体指针，包含了互斥锁的相关信息。
+ * 返回: 无
+ */
 void
 ngx_shmtx_destroy(ngx_shmtx_t *mtx)
 {
+    /* 关闭与互斥锁关联的文件描述符 */
     if (ngx_close_file(mtx->fd) == NGX_FILE_ERROR) {
         ngx_log_error(NGX_LOG_ALERT, ngx_cycle->log, ngx_errno,
                       ngx_close_file_n " \"%s\" failed", mtx->name);
