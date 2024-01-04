@@ -514,22 +514,35 @@ extern ngx_os_io_t  ngx_io;
 #define NGX_EVENT_MODULE      0x544E5645  /* "EVNT" */
 #define NGX_EVENT_CONF        0x02000000
 
-
+/*
+ * 结构体: ngx_event_conf_t
+ * -----------------------
+ * 描述: 定义了ngx_event_core模块的配置结构体，用于存储event_core模块的各种配置参数。
+ * 参数:
+ *   - ngx_uint_t connections: 最大连接数
+ *   - ngx_uint_t use: 事件模块的使用方式
+ *   - ngx_flag_t multi_accept: 是否允许多个连接同时接受
+ *   - ngx_flag_t accept_mutex: 是否开启连接互斥锁
+ *   - ngx_msec_t accept_mutex_delay: 互斥锁延迟时间
+ *   - u_char *name: 事件核心的名称
+ *   - ngx_array_t debug_connection: 调试连接数组（仅在调试模式下有效）
+ * 返回: ngx_event_conf_t结构体，包含了事件核心模块的各项配置信息。
+ */
 typedef struct {
-    ngx_uint_t    connections;
-    ngx_uint_t    use;
+    ngx_uint_t    connections;             /* 最大连接数 */
+    ngx_uint_t    use;                     /* 事件模块的使用方式 */
 
-    ngx_flag_t    multi_accept;
-    ngx_flag_t    accept_mutex;
+    ngx_flag_t    multi_accept;            /* 是否允许多个连接同时接受 */
+    ngx_flag_t    accept_mutex;            /* 是否开启连接互斥锁 */
 
-    ngx_msec_t    accept_mutex_delay;
-
-    u_char       *name;
+    ngx_msec_t    accept_mutex_delay;      /* 互斥锁延迟时间 */
+    u_char       *name;                    /* 事件核心的名称 */
 
 #if (NGX_DEBUG)
-    ngx_array_t   debug_connection;
+    ngx_array_t   debug_connection;        /* 调试连接数组（仅在调试模式下有效） */
 #endif
 } ngx_event_conf_t;
+
 
 
 typedef struct {
@@ -577,8 +590,17 @@ extern ngx_module_t           ngx_events_module;
 extern ngx_module_t           ngx_event_core_module;
 
 
+/*
+ * 宏定义: ngx_event_get_conf
+ * -------------------------
+ * 描述: 获取事件模块的配置结构体。
+ * 参数:
+ *   - conf_ctx: 配置上下文。
+ *   - module: 事件模块。
+ * 返回: 事件模块的配置结构体。
+ */
 #define ngx_event_get_conf(conf_ctx, module)                                  \
-             (*(ngx_get_conf(conf_ctx, ngx_events_module))) [module.ctx_index]
+             (*(ngx_get_conf(conf_ctx, ngx_events_module)))[module.ctx_index]
 
 
 

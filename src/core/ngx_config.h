@@ -93,9 +93,27 @@
 
 #endif
 
-typedef intptr_t        ngx_int_t;
-typedef uintptr_t       ngx_uint_t;
-typedef intptr_t        ngx_flag_t;
+/*
+ * 类型定义: ngx_fd_t
+ * ----------------
+ * 描述: 定义了ngx_fd_t类型，表示文件描述符的数据类型。
+ */
+typedef int                      ngx_fd_t;
+
+/*
+ * 结构体定义: ngx_file_info_t
+ * --------------------------
+ * 描述: 定义了ngx_file_info_t结构体，用于存储文件信息，具体内容可能依赖于平台。
+ */
+typedef struct stat              ngx_file_info_t;
+
+/*
+ * 类型定义: ngx_file_uniq_t
+ * ------------------------
+ * 描述: 定义了ngx_file_uniq_t类型，表示文件的唯一标识符的数据类型。
+ */
+typedef ino_t                    ngx_file_uniq_t;
+
 
 
 #define NGX_INT32_LEN   (sizeof("-2147483648") - 1)
