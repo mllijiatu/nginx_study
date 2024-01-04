@@ -27,7 +27,96 @@ typedef struct {
 #endif
 
 
+/*
+ * 事件结构体 ngx_event_s 的定义
+ */
 struct ngx_event_s {
+    void            *data;              /* 事件相关的数据指针 */
+
+    unsigned         write:1;           /* 写事件标志位 */
+
+    unsigned         accept:1;          /* 接受连接事件标志位 */
+
+    /* 用于检测在 kqueue 和 epoll 中的陈旧事件 */
+    unsigned         instance:1;        /* 事件实例标志位 */
+
+    /*
+     * 事件已经传递给内核，或者将要传递给内核；
+     * 在 aio 模式下，表示操作已经提交。
+     */
+    unsigned         active:1;          /* 事件激活标志位 */
+
+    unsigned         disabled:1;        /* 事件禁用标志位 */
+
+    /* 就绪事件；在 aio 模式下，0 表示不能提交任何操作 */
+    unsigned         ready:1;           /* 事件就绪标志位 */
+
+    unsigned         oneshot:1;         /* 一次性事件标志位 */
+
+    /* aio 操作已经完成 */
+    unsigned         complete:1;        /* 事件完成标志位 */
+
+    unsigned         eof:1;             /* 事件发生EOF标志位 */
+    unsigned         error:1;           /* 事件发生错误标志位 */
+
+    unsigned         timedout:1;        /* 事件超时标志位 */
+    unsigned         timer_set:1;       /* 定时器已设置标志位 */
+
+    unsigned         delayed:1;         /* 延迟事件标志位 */
+
+    unsigned         deferred_accept:1; /* 延迟接受标志位 */
+
+    /* kqueue、epoll 或者在 aio 链操作中报告的挂起的 EOF 事件 */
+    unsigned         pending_eof:1;     /* 挂起的 EOF 事件标志位 */
+
+    unsigned         posted:1;          /* 事件已经添加到事件队列标志位 */
+
+    unsigned         closed:1;          /* 事件已关闭标志位 */
+
+    /* 用于在工作线程退出时测试 */
+    unsigned         channel:1;         /* 通道标志位 */
+    unsigned         resolver:1;        /* 解析器标志位 */
+
+    unsigned         cancelable:1;      /* 可取消标志位 */
+
+#if (NGX_HAVE_KQUEUE)
+    unsigned         kq_vnode:1;       /* kqueue 专用标志位 */
+
+    /* kqueue 专用：kqueue 报告的挂起 errno */
+    int              kq_errno;
+#endif
+
+    /*
+     * kqueue 专用：
+     *   accept:     等待被接受的套接字数量
+     *   read:       事件就绪时要读取的字节数，或者在设置了 NGX_LOWAT_EVENT 标志位时为低水位
+     *   write:      事件就绪时缓冲区中的可用空间，或者在设置了 NGX_LOWAT_EVENT 标志位时为低水位
+     *
+     * iocp: TODO
+     *
+     * 其他情况：
+     *   accept:     如果支持多个接受，为1，否则为0
+     *   read:       事件就绪时要读取的字节数，如果不知道，则为-1
+     */
+    int              available;
+
+    ngx_event_handler_pt  handler;       /* 事件处理函数指针 */
+
+
+#if (NGX_HAVE_IOCP)
+    ngx_event_ovlp_t ovlp;               /* iocp 专用 */
+#endif
+
+    ngx_uint_t       index;              /* 事件在事件数组中的索引 */
+
+    ngx_log_t       *log;                /* 日志对象指针 */
+
+    ngx_rbtree_node_t   timer;           /* 定时器红黑树节点 */
+
+    /* 事件队列 */
+    ngx_queue_t      queue;
+};
+
     void            *data;
 
     unsigned         write:1;

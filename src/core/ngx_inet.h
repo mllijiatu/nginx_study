@@ -32,9 +32,12 @@
 #define NGX_SOCKADDRLEN       sizeof(ngx_sockaddr_t)
 
 
+/**
+ * 定义一个联合体，用于存储不同类型的套接字地址结构体。
+ */
 typedef union {
-    struct sockaddr           sockaddr;
-    struct sockaddr_in        sockaddr_in;
+    struct sockaddr           sockaddr;      /* 通用套接字地址结构体 */
+    struct sockaddr_in        sockaddr_in;   /* IPv4套接字地址结构体 */
 #if (NGX_HAVE_INET6)
     struct sockaddr_in6       sockaddr_in6;
 #endif
