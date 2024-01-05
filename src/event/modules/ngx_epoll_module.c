@@ -91,11 +91,18 @@ struct io_event
 #endif
 #endif /* NGX_TEST_BUILD_EPOLL */
 
+/*
+ * 结构体 ngx_epoll_conf_t 用于表示 epoll 模块的配置。
+ * 它包含两个 ngx_uint_t 类型的变量：'events' 和 'aio_requests'。
+ * 'events' 存储 epoll 能够处理的最大事件数。
+ * 'aio_requests' 存储异步 I/O 请求的最大数量。
+ */
 typedef struct
 {
     ngx_uint_t events;
     ngx_uint_t aio_requests;
 } ngx_epoll_conf_t;
+
 
 static ngx_int_t ngx_epoll_init(ngx_cycle_t *cycle, ngx_msec_t timer);
 #if (NGX_HAVE_EVENTFD)
@@ -150,10 +157,22 @@ static ngx_connection_t ngx_eventfd_conn;
 ngx_uint_t ngx_use_epoll_rdhup;
 #endif
 
+/*
+ * 描述：这个结构体保存了epoll模块的配置指令。
+ *       它包括与epoll事件和工作进程异步I/O请求相关的设置。
+ */
 static ngx_str_t epoll_name = ngx_string("epoll");
 
+/*
+ * 描述：epoll模块的配置指令。
+ *       这些指令定义了与epoll相关的配置参数。
+ */
 static ngx_command_t ngx_epoll_commands[] = {
 
+    /*
+     * 描述：设置在单个epoll_wait调用中可以处理的最大事件数。
+     *       此指令接受一个参数，即事件数。
+     */
     {ngx_string("epoll_events"),
      NGX_EVENT_CONF | NGX_CONF_TAKE1,
      ngx_conf_set_num_slot,
@@ -161,6 +180,10 @@ static ngx_command_t ngx_epoll_commands[] = {
      offsetof(ngx_epoll_conf_t, events),
      NULL},
 
+    /*
+     * 描述：设置工作进程的异步I/O请求数量。
+     *       此指令接受一个参数，即请求数量。
+     */
     {ngx_string("worker_aio_requests"),
      NGX_EVENT_CONF | NGX_CONF_TAKE1,
      ngx_conf_set_num_slot,
@@ -170,27 +193,33 @@ static ngx_command_t ngx_epoll_commands[] = {
 
     ngx_null_command};
 
+
+/*
+ * 描述：定义epoll事件模块的上下文结构体，包含事件模块的各种回调函数。
+ */
 static ngx_event_module_t ngx_epoll_module_ctx = {
-    &epoll_name,
-    ngx_epoll_create_conf, /* create configuration */
-    ngx_epoll_init_conf,   /* init configuration */
+    &epoll_name,                  /* 模块名 */
+    ngx_epoll_create_conf,        /* 创建配置 */
+    ngx_epoll_init_conf,          /* 初始化配置 */
 
     {
-        ngx_epoll_add_event,      /* add an event */
-        ngx_epoll_del_event,      /* delete an event */
-        ngx_epoll_add_event,      /* enable an event */
-        ngx_epoll_del_event,      /* disable an event */
-        ngx_epoll_add_connection, /* add an connection */
-        ngx_epoll_del_connection, /* delete an connection */
+        ngx_epoll_add_event,      /* 添加事件 */
+        ngx_epoll_del_event,      /* 删除事件 */
+        ngx_epoll_add_event,      /* 启用事件 */
+        ngx_epoll_del_event,      /* 禁用事件 */
+        ngx_epoll_add_connection, /* 添加连接 */
+        ngx_epoll_del_connection, /* 删除连接 */
 #if (NGX_HAVE_EVENTFD)
-        ngx_epoll_notify, /* trigger a notify */
+        ngx_epoll_notify,         /* 触发通知 */
 #else
-        NULL, /* trigger a notify */
+        NULL,                     /* 触发通知 */
 #endif
-        ngx_epoll_process_events, /* process the events */
-        ngx_epoll_init,           /* init the events */
-        ngx_epoll_done,           /* done the events */
-    }};
+        ngx_epoll_process_events, /* 处理事件 */
+        ngx_epoll_init,           /* 初始化事件 */
+        ngx_epoll_done,           /* 完成事件处理 */
+    }
+};
+
 
 ngx_module_t ngx_epoll_module = {
     NGX_MODULE_V1,
@@ -667,6 +696,14 @@ ngx_epoll_done(ngx_cycle_t *cycle)
     nevents = 0;
 }
 
+/*
+ * 向 epoll 中添加事件的函数。
+ * 该函数将被 ngx_epoll_module 模块的 add_event 回调函数调用。
+ * 参数 ev: 指向 ngx_event_t 结构体的指针，表示要添加的事件。
+ * 参数 event: 表示要添加的事件类型，可以是 NGX_READ_EVENT 或 NGX_WRITE_EVENT。
+ * 参数 flags: 表示事件的标志，例如 NGX_ONESHOT_EVENT 和 NGX_EXCLUSIVE_EVENT。
+ * 返回值: NGX_OK 表示成功添加事件，NGX_ERROR 表示添加失败。
+ */
 static ngx_int_t
 ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 {
@@ -676,8 +713,10 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     ngx_connection_t *c;
     struct epoll_event ee;
 
+    // 获取事件对应的连接结构体
     c = ev->data;
 
+    // 根据事件类型设置 epoll 事件的标志
     events = (uint32_t)event;
 
     if (event == NGX_READ_EVENT)
@@ -697,6 +736,7 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
 #endif
     }
 
+    // 如果事件已经是活跃状态，则使用 EPOLL_CTL_MOD 修改事件
     if (e->active)
     {
         op = EPOLL_CTL_MOD;
@@ -704,9 +744,10 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     }
     else
     {
-        op = EPOLL_CTL_ADD;
+        op = EPOLL_CTL_ADD;  // 否则，使用 EPOLL_CTL_ADD 添加事件
     }
 
+    // 根据标志设置 epoll 事件的属性
 #if (NGX_HAVE_EPOLLEXCLUSIVE && NGX_HAVE_EPOLLRDHUP)
     if (flags & NGX_EXCLUSIVE_EVENT)
     {
@@ -714,27 +755,31 @@ ngx_epoll_add_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
     }
 #endif
 
+    // 设置 epoll_event 结构体的属性
     ee.events = events | (uint32_t)flags;
     ee.data.ptr = (void *)((uintptr_t)c | ev->instance);
 
+    // 在调试日志中记录 epoll 操作信息
     ngx_log_debug3(NGX_LOG_DEBUG_EVENT, ev->log, 0,
                    "epoll add event: fd:%d op:%d ev:%08XD",
                    c->fd, op, ee.events);
 
+    // 调用 epoll_ctl 函数进行事件控制操作
     if (epoll_ctl(ep, op, c->fd, &ee) == -1)
     {
         ngx_log_error(NGX_LOG_ALERT, ev->log, ngx_errno,
                       "epoll_ctl(%d, %d) failed", op, c->fd);
-        return NGX_ERROR;
+        return NGX_ERROR;  // 操作失败，返回 NGX_ERROR
     }
 
-    ev->active = 1;
+    ev->active = 1;  // 设置事件为活跃状态
 #if 0
     ev->oneshot = (flags & NGX_ONESHOT_EVENT) ? 1 : 0;
 #endif
 
-    return NGX_OK;
+    return NGX_OK;  // 添加事件成功，返回 NGX_OK
 }
+
 
 static ngx_int_t
 ngx_epoll_del_event(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags)
@@ -1316,22 +1361,31 @@ ngx_epoll_eventfd_handler(ngx_event_t *ev)
 
 #endif
 
+/*
+ * 创建并初始化 ngx_epoll 模块的配置结构体。
+ * 该函数将被 ngx_epoll_module 模块的 create_conf 回调函数调用。
+ * 参数 cycle: 指向 ngx_cycle_t 结构体的指针，表示当前的运行周期。
+ * 返回值: 指向 ngx_epoll_conf_t 结构体的指针，表示创建的配置结构体。
+ */
 static void *
 ngx_epoll_create_conf(ngx_cycle_t *cycle)
 {
     ngx_epoll_conf_t *epcf;
 
+    // 分配内存空间用于存储 ngx_epoll_conf_t 结构体
     epcf = ngx_palloc(cycle->pool, sizeof(ngx_epoll_conf_t));
     if (epcf == NULL)
     {
-        return NULL;
+        return NULL;  // 内存分配失败，返回 NULL
     }
 
-    epcf->events = NGX_CONF_UNSET;
-    epcf->aio_requests = NGX_CONF_UNSET;
+    // 初始化配置结构体的成员变量
+    epcf->events = NGX_CONF_UNSET;        // events 默认值为 NGX_CONF_UNSET
+    epcf->aio_requests = NGX_CONF_UNSET;  // aio_requests 默认值为 NGX_CONF_UNSET
 
-    return epcf;
+    return epcf;  // 返回创建并初始化后的配置结构体指针
 }
+
 
 static char *
 ngx_epoll_init_conf(ngx_cycle_t *cycle, void *conf)

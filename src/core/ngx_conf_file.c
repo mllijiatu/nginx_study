@@ -1509,6 +1509,17 @@ ngx_conf_set_keyval_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     return NGX_CONF_OK;
 }
 
+/*
+ * 描述：解析配置文件中的数字参数并设置相应的配置项。
+ * 参数：
+ *   - cf: ngx_conf_t结构体，配置文件的解析上下文。
+ *   - cmd: ngx_command_t结构体，当前解析的配置指令。
+ *   - conf: 指向存储配置项的内存块的指针。
+ * 返回值：
+ *   - 如果成功，返回NGX_CONF_OK；
+ *   - 如果参数重复，返回"is duplicate"；
+ *   - 如果数字解析失败，返回"invalid number"。
+ */
 char *
 ngx_conf_set_num_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 {
@@ -1540,6 +1551,7 @@ ngx_conf_set_num_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 
     return NGX_CONF_OK;
 }
+
 
 char *
 ngx_conf_set_size_slot(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
