@@ -816,13 +816,23 @@ ngx_module_t  ngx_http_core_module = {
 ngx_str_t  ngx_http_core_get_method = { 3, (u_char *) "GET" };
 
 
+/*
+ * 描述：该函数是处理HTTP请求的入口点。它设置请求的一些基本属性，如keepalive、lingering_close等，
+ *        并调用ngx_http_core_run_phases函数启动请求处理阶段。
+ *
+ * 参数：
+ *   - r：指向ngx_http_request_t结构的指针，表示HTTP请求对象。
+ */
+
 void
 ngx_http_handler(ngx_http_request_t *r)
 {
     ngx_http_core_main_conf_t  *cmcf;
 
+    // 重置请求日志动作
     r->connection->log->action = NULL;
 
+    // 如果不是内部请求，根据Connection头部设置keepalive属性
     if (!r->internal) {
         switch (r->headers_in.connection_type) {
         case 0:
@@ -838,26 +848,42 @@ ngx_http_handler(ngx_http_request_t *r)
             break;
         }
 
+        // 根据Content-Length和chunked设置lingering_close属性
         r->lingering_close = (r->headers_in.content_length_n > 0
                               || r->headers_in.chunked);
         r->phase_handler = 0;
 
     } else {
+        // 对于内部请求，设置phase_handler为server_rewrite_index
         cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
         r->phase_handler = cmcf->phase_engine.server_rewrite_index;
     }
 
+    // 设置valid_location为1
     r->valid_location = 1;
+
 #if (NGX_HTTP_GZIP)
+    // 对于Gzip模块，初始化相关属性
     r->gzip_tested = 0;
     r->gzip_ok = 0;
     r->gzip_vary = 0;
 #endif
 
+    // 设置写事件处理函数为ngx_http_core_run_phases
     r->write_event_handler = ngx_http_core_run_phases;
+
+    // 启动请求处理阶段
     ngx_http_core_run_phases(r);
 }
 
+
+
+/*
+ * 描述：该函数是HTTP请求处理阶段的核心函数，它遍历所有阶段处理函数并调用它们，直到其中一个函数返回NGX_OK。
+ *
+ * 参数：
+ *   - r：指向ngx_http_request_t结构的指针，表示HTTP请求对象。
+ */
 
 void
 ngx_http_core_run_phases(ngx_http_request_t *r)
@@ -866,19 +892,25 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
     ngx_http_phase_handler_t   *ph;
     ngx_http_core_main_conf_t  *cmcf;
 
+    // 获取HTTP核心模块的主配置项
     cmcf = ngx_http_get_module_main_conf(r, ngx_http_core_module);
 
+    // 获取阶段处理函数数组
     ph = cmcf->phase_engine.handlers;
 
+    // 遍历所有阶段处理函数
     while (ph[r->phase_handler].checker) {
 
+        // 调用当前阶段处理函数
         rc = ph[r->phase_handler].checker(r, &ph[r->phase_handler]);
 
+        // 如果返回NGX_OK，则结束循环
         if (rc == NGX_OK) {
             return;
         }
     }
 }
+
 
 
 ngx_int_t
