@@ -1706,9 +1706,64 @@ ngx_http_add_server(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 }
 
 
+/*
+ * ngx_http_optimize_servers - 监听服务器列表，排序并检查同一地址和端口下的服务器配置。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - cmcf：http核心模块的主配置结构体。
+ *   - ports：包含端口信息的数组。
+ *
+ * 返回：
+ *   - NGX_OK：成功。
+ *   - NGX_ERROR：失败。
+ */
 static ngx_int_t
 ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_array_t *ports)
+{
+    ngx_uint_t             p, a;
+    ngx_http_conf_port_t  *port;
+    ngx_http_conf_addr_t  *addr;
+
+    if (ports == NULL) {
+        return NGX_OK;
+    }
+
+    port = ports->elts;
+    for (p = 0; p < ports->nelts; p++) {
+
+        ngx_sort(port[p].addrs.elts, (size_t) port[p].addrs.nelts,
+                 sizeof(ngx_http_conf_addr_t), ngx_http_cmp_conf_addrs);
+
+        /*
+         * 检查是否所有基于名称的服务器都具有相同的
+         * 配置作为给定地址:端口的默认服务器
+         */
+
+        addr = port[p].addrs.elts;
+        for (a = 0; a < port[p].addrs.nelts; a++) {
+
+            if (addr[a].servers.nelts > 1
+#if (NGX_PCRE)
+                || addr[a].default_server->captures
+#endif
+               )
+            {
+                if (ngx_http_server_names(cf, cmcf, &addr[a]) != NGX_OK) {
+                    return NGX_ERROR;
+                }
+            }
+        }
+
+        if (ngx_http_init_listening(cf, &port[p]) != NGX_OK) {
+            return NGX_ERROR;
+        }
+    }
+
+    return NGX_OK;
+}
+
 {
     ngx_uint_t             p, a;
     ngx_http_conf_port_t  *port;
@@ -1955,8 +2010,88 @@ ngx_http_cmp_dns_wildcards(const void *one, const void *two)
 }
 
 
+/*
+ * ngx_http_init_listening - 初始化监听器，根据端口信息创建listening结构体。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - port：包含端口信息的结构体。
+ *
+ * 返回：
+ *   - NGX_OK：成功。
+ *   - NGX_ERROR：失败。
+ */
 static ngx_int_t
 ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
+{
+    ngx_uint_t                 i, last, bind_wildcard;
+    ngx_listening_t           *ls;
+    ngx_http_port_t           *hport;
+    ngx_http_conf_addr_t      *addr;
+
+    addr = port->addrs.elts;
+    last = port->addrs.nelts;
+
+    /*
+     * 如果存在对“*：port”的绑定，那么我们需要仅绑定到“*：port”，
+     * 并忽略其他隐式绑定。绑定已经按顺序排序：显式绑定在开始，
+     * 隐式绑定在中间，通配符绑定在最后。
+     */
+
+    if (addr[last - 1].opt.wildcard) {
+        addr[last - 1].opt.bind = 1;
+        bind_wildcard = 1;
+
+    } else {
+        bind_wildcard = 0;
+    }
+
+    i = 0;
+
+    while (i < last) {
+
+        if (bind_wildcard && !addr[i].opt.bind) {
+            i++;
+            continue;
+        }
+
+        ls = ngx_http_add_listening(cf, &addr[i]);
+        if (ls == NULL) {
+            return NGX_ERROR;
+        }
+
+        hport = ngx_pcalloc(cf->pool, sizeof(ngx_http_port_t));
+        if (hport == NULL) {
+            return NGX_ERROR;
+        }
+
+        ls->servers = hport;
+
+        hport->naddrs = i + 1;
+
+        switch (ls->sockaddr->sa_family) {
+
+#if (NGX_HAVE_INET6)
+        case AF_INET6:
+            if (ngx_http_add_addrs6(cf, hport, addr) != NGX_OK) {
+                return NGX_ERROR;
+            }
+            break;
+#endif
+        default: /* AF_INET */
+            if (ngx_http_add_addrs(cf, hport, addr) != NGX_OK) {
+                return NGX_ERROR;
+            }
+            break;
+        }
+
+        addr++;
+        last--;
+    }
+
+    return NGX_OK;
+}
+
 {
     ngx_uint_t                 i, last, bind_wildcard;
     ngx_listening_t           *ls;
@@ -2028,8 +2163,93 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
 }
 
 
+/*
+ * ngx_http_add_listening - 添加一个监听器，创建ngx_listening_t结构体。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - addr：包含监听地址信息的结构体。
+ *
+ * 返回：
+ *   - ngx_listening_t指针：成功。
+ *   - NULL：失败。
+ */
 static ngx_listening_t *
 ngx_http_add_listening(ngx_conf_t *cf, ngx_http_conf_addr_t *addr)
+{
+    ngx_listening_t           *ls;
+    ngx_http_core_loc_conf_t  *clcf;
+    ngx_http_core_srv_conf_t  *cscf;
+
+    ls = ngx_create_listening(cf, addr->opt.sockaddr, addr->opt.socklen);
+    if (ls == NULL) {
+        return NULL;
+    }
+
+    ls->addr_ntop = 1;
+
+    ls->handler = ngx_http_init_connection;
+
+    cscf = addr->default_server;
+    ls->pool_size = cscf->connection_pool_size;
+
+    clcf = cscf->ctx->loc_conf[ngx_http_core_module.ctx_index];
+
+    ls->logp = clcf->error_log;
+    ls->log.data = &ls->addr_text;
+    ls->log.handler = ngx_accept_log_error;
+
+#if (NGX_WIN32)
+    {
+    ngx_iocp_conf_t  *iocpcf = NULL;
+
+    if (ngx_get_conf(cf->cycle->conf_ctx, ngx_events_module)) {
+        iocpcf = ngx_event_get_conf(cf->cycle->conf_ctx, ngx_iocp_module);
+    }
+    if (iocpcf && iocpcf->acceptex_read) {
+        ls->post_accept_buffer_size = cscf->client_header_buffer_size;
+    }
+    }
+#endif
+
+    ls->backlog = addr->opt.backlog;
+    ls->rcvbuf = addr->opt.rcvbuf;
+    ls->sndbuf = addr->opt.sndbuf;
+
+    ls->keepalive = addr->opt.so_keepalive;
+#if (NGX_HAVE_KEEPALIVE_TUNABLE)
+    ls->keepidle = addr->opt.tcp_keepidle;
+    ls->keepintvl = addr->opt.tcp_keepintvl;
+    ls->keepcnt = addr->opt.tcp_keepcnt;
+#endif
+
+#if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
+    ls->accept_filter = addr->opt.accept_filter;
+#endif
+
+#if (NGX_HAVE_DEFERRED_ACCEPT && defined TCP_DEFER_ACCEPT)
+    ls->deferred_accept = addr->opt.deferred_accept;
+#endif
+
+#if (NGX_HAVE_INET6)
+    ls->ipv6only = addr->opt.ipv6only;
+#endif
+
+#if (NGX_HAVE_SETFIB)
+    ls->setfib = addr->opt.setfib;
+#endif
+
+#if (NGX_HAVE_TCP_FASTOPEN)
+    ls->fastopen = addr->opt.fastopen;
+#endif
+
+#if (NGX_HAVE_REUSEPORT)
+    ls->reuseport = addr->opt.reuseport;
+#endif
+
+    return ls;
+}
+
 {
     ngx_listening_t           *ls;
     ngx_http_core_loc_conf_t  *clcf;
