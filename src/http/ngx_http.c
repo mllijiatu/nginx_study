@@ -118,8 +118,243 @@ ngx_module_t  ngx_http_module = {
 };
 
 
+/*
+ * ngx_http_block - 该函数负责初始化主配置和处理http{}块内的配置。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - cmd：包含配置指令的命令结构体。
+ *   - conf：主配置上下文。
+ *
+ * 返回：
+ *   - NGX_CONF_OK：成功。
+ *   - NGX_CONF_ERROR：失败。
+ *   - "is duplicate"：如果配置是重复的。
+ */
 static char *
 ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    char                        *rv;
+    ngx_uint_t                   mi, m, s;
+    ngx_conf_t                   pcf;
+    ngx_http_module_t           *module;
+    ngx_http_conf_ctx_t         *ctx;
+    ngx_http_core_loc_conf_t    *clcf;
+    ngx_http_core_srv_conf_t   **cscfp;
+    ngx_http_core_main_conf_t   *cmcf;
+
+    if (*(ngx_http_conf_ctx_t **) conf) {
+        return "is duplicate";
+    }
+
+    /* http主上下文 */
+
+    ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
+    if (ctx == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    *(ngx_http_conf_ctx_t **) conf = ctx;
+
+
+    /* 统计http模块的数量并设置它们的索引 */
+
+    ngx_http_max_module = ngx_count_modules(cf->cycle, NGX_HTTP_MODULE);
+
+
+    /* http主配置上下文，在所有http上下文中都相同 */
+
+    ctx->main_conf = ngx_pcalloc(cf->pool,
+                                 sizeof(void *) * ngx_http_max_module);
+    if (ctx->main_conf == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /*
+     * http null srv_conf上下文，用于合并server{}的srv_conf
+     */
+
+    ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
+    if (ctx->srv_conf == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /*
+     * http null loc_conf上下文，用于合并server{}的loc_conf
+     */
+
+    ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
+    if (ctx->loc_conf == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /*
+     * 创建main_conf、null srv_conf、和null loc_conf
+     * 的所有http模块
+     */
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+        mi = cf->cycle->modules[m]->ctx_index;
+
+        if (module->create_main_conf) {
+            ctx->main_conf[mi] = module->create_main_conf(cf);
+            if (ctx->main_conf[mi] == NULL) {
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        if (module->create_srv_conf) {
+            ctx->srv_conf[mi] = module->create_srv_conf(cf);
+            if (ctx->srv_conf[mi] == NULL) {
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        if (module->create_loc_conf) {
+            ctx->loc_conf[mi] = module->create_loc_conf(cf);
+            if (ctx->loc_conf[mi] == NULL) {
+                return NGX_CONF_ERROR;
+            }
+        }
+    }
+
+    pcf = *cf;
+    cf->ctx = ctx;
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+
+        if (module->preconfiguration) {
+            if (module->preconfiguration(cf) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+        }
+    }
+
+    /* 解析http{}块内部 */
+
+    cf->module_type = NGX_HTTP_MODULE;
+    cf->cmd_type = NGX_HTTP_MAIN_CONF;
+    rv = ngx_conf_parse(cf, NULL);
+
+    if (rv != NGX_CONF_OK) {
+        goto failed;
+    }
+
+    /*
+     * 初始化http{} main_conf，合并server{}的srv_conf
+     * 以及其location{}的loc_conf
+     */
+
+    cmcf = ctx->main_conf[ngx_http_core_module.ctx_index];
+    cscfp = cmcf->servers.elts;
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+        mi = cf->cycle->modules[m]->ctx_index;
+
+        /* 初始化http{} main_conf */
+
+        if (module->init_main_conf) {
+            rv = module->init_main_conf(cf, ctx->main_conf[mi]);
+            if (rv != NGX_CONF_OK) {
+                goto failed;
+            }
+        }
+
+        rv = ngx_http_merge_servers(cf, cmcf, module, mi);
+        if (rv != NGX_CONF_OK) {
+            goto failed;
+        }
+    }
+
+
+    /* 创建location树 */
+
+    for (s = 0; s < cmcf->servers.nelts; s++) {
+
+        clcf = cscfp[s]->ctx->loc_conf[ngx_http_core_module.ctx_index];
+
+        if (ngx_http_init_locations(cf, cscfp[s], clcf) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_init_static_location_trees(cf, clcf) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+
+    if (ngx_http_init_phases(cf, cmcf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    if (ngx_http_init_headers_in_hash(cf, cmcf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+
+        if (module->postconfiguration) {
+            if (module->postconfiguration(cf) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+        }
+    }
+
+    if (ngx_http_variables_init_vars(cf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    /*
+     * http{}的cf->ctx在配置合并和后配置过程中是必需的
+     */
+
+    *cf = pcf;
+
+
+    if (ngx_http_init_phase_handlers(cf, cmcf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /* 优化端口、地址和服务器名的列表 */
+
+    if (ngx_http_optimize_servers(cf, cmcf, cmcf->ports) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
+
+failed:
+
+    *cf = pcf;
+
+    return rv;
+}
+
 {
     char                        *rv;
     ngx_uint_t                   mi, m, s;
