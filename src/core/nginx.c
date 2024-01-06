@@ -166,20 +166,26 @@ static ngx_core_module_t  ngx_core_module_ctx = {
 };
 
 
-ngx_module_t  ngx_core_module = {
-    NGX_MODULE_V1,
-    &ngx_core_module_ctx,                  /* module context */
-    ngx_core_commands,                     /* module directives */
-    NGX_CORE_MODULE,                       /* module type */
-    NULL,                                  /* init master */
-    NULL,                                  /* init module */
-    NULL,                                  /* init process */
-    NULL,                                  /* init thread */
-    NULL,                                  /* exit thread */
-    NULL,                                  /* exit process */
-    NULL,                                  /* exit master */
-    NGX_MODULE_V1_PADDING
+/*
+整个核心模块的配置结构体 ngx_core_module。
+这个结构体定义了核心模块的基本信息和生命周期函数。
+*/
+
+ngx_module_t ngx_core_module = {
+    NGX_MODULE_V1,                         /* 模块版本号，使用NGX_MODULE_V1宏定义的版本 */
+    &ngx_core_module_ctx,                  /* 模块上下文，包含模块的一些基本信息和配置项 */
+    ngx_core_commands,                     /* 模块的配置指令数组，用于解析配置文件中的指令 */
+    NGX_CORE_MODULE,                       /* 模块的类型，这里是核心模块 */
+    NULL,                                  /* 初始化 master 进程的回调函数，一般为 NULL */
+    NULL,                                  /* 初始化模块的回调函数，一般为 NULL */
+    NULL,                                  /* 初始化 worker 进程的回调函数，一般为 NULL */
+    NULL,                                  /* 初始化线程的回调函数，一般为 NULL */
+    NULL,                                  /* 线程退出时的回调函数，一般为 NULL */
+    NULL,                                  /* worker 进程退出时的回调函数，一般为 NULL */
+    NULL,                                  /* master 进程退出时的回调函数，一般为 NULL */
+    NGX_MODULE_V1_PADDING                  /* 保留字段，用于版本兼容性 */
 };
+
 
 
 static ngx_uint_t   ngx_show_help;

@@ -118,8 +118,243 @@ ngx_module_t  ngx_http_module = {
 };
 
 
+/*
+ * ngx_http_block - 该函数负责初始化主配置和处理http{}块内的配置。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - cmd：包含配置指令的命令结构体。
+ *   - conf：主配置上下文。
+ *
+ * 返回：
+ *   - NGX_CONF_OK：成功。
+ *   - NGX_CONF_ERROR：失败。
+ *   - "is duplicate"：如果配置是重复的。
+ */
 static char *
 ngx_http_block(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
+{
+    char                        *rv;
+    ngx_uint_t                   mi, m, s;
+    ngx_conf_t                   pcf;
+    ngx_http_module_t           *module;
+    ngx_http_conf_ctx_t         *ctx;
+    ngx_http_core_loc_conf_t    *clcf;
+    ngx_http_core_srv_conf_t   **cscfp;
+    ngx_http_core_main_conf_t   *cmcf;
+
+    if (*(ngx_http_conf_ctx_t **) conf) {
+        return "is duplicate";
+    }
+
+    /* http主上下文 */
+
+    ctx = ngx_pcalloc(cf->pool, sizeof(ngx_http_conf_ctx_t));
+    if (ctx == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+    *(ngx_http_conf_ctx_t **) conf = ctx;
+
+
+    /* 统计http模块的数量并设置它们的索引 */
+
+    ngx_http_max_module = ngx_count_modules(cf->cycle, NGX_HTTP_MODULE);
+
+
+    /* http主配置上下文，在所有http上下文中都相同 */
+
+    ctx->main_conf = ngx_pcalloc(cf->pool,
+                                 sizeof(void *) * ngx_http_max_module);
+    if (ctx->main_conf == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /*
+     * http null srv_conf上下文，用于合并server{}的srv_conf
+     */
+
+    ctx->srv_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
+    if (ctx->srv_conf == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /*
+     * http null loc_conf上下文，用于合并server{}的loc_conf
+     */
+
+    ctx->loc_conf = ngx_pcalloc(cf->pool, sizeof(void *) * ngx_http_max_module);
+    if (ctx->loc_conf == NULL) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /*
+     * 创建main_conf、null srv_conf、和null loc_conf
+     * 的所有http模块
+     */
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+        mi = cf->cycle->modules[m]->ctx_index;
+
+        if (module->create_main_conf) {
+            ctx->main_conf[mi] = module->create_main_conf(cf);
+            if (ctx->main_conf[mi] == NULL) {
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        if (module->create_srv_conf) {
+            ctx->srv_conf[mi] = module->create_srv_conf(cf);
+            if (ctx->srv_conf[mi] == NULL) {
+                return NGX_CONF_ERROR;
+            }
+        }
+
+        if (module->create_loc_conf) {
+            ctx->loc_conf[mi] = module->create_loc_conf(cf);
+            if (ctx->loc_conf[mi] == NULL) {
+                return NGX_CONF_ERROR;
+            }
+        }
+    }
+
+    pcf = *cf;
+    cf->ctx = ctx;
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+
+        if (module->preconfiguration) {
+            if (module->preconfiguration(cf) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+        }
+    }
+
+    /* 解析http{}块内部 */
+
+    cf->module_type = NGX_HTTP_MODULE;
+    cf->cmd_type = NGX_HTTP_MAIN_CONF;
+    rv = ngx_conf_parse(cf, NULL);
+
+    if (rv != NGX_CONF_OK) {
+        goto failed;
+    }
+
+    /*
+     * 初始化http{} main_conf，合并server{}的srv_conf
+     * 以及其location{}的loc_conf
+     */
+
+    cmcf = ctx->main_conf[ngx_http_core_module.ctx_index];
+    cscfp = cmcf->servers.elts;
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+        mi = cf->cycle->modules[m]->ctx_index;
+
+        /* 初始化http{} main_conf */
+
+        if (module->init_main_conf) {
+            rv = module->init_main_conf(cf, ctx->main_conf[mi]);
+            if (rv != NGX_CONF_OK) {
+                goto failed;
+            }
+        }
+
+        rv = ngx_http_merge_servers(cf, cmcf, module, mi);
+        if (rv != NGX_CONF_OK) {
+            goto failed;
+        }
+    }
+
+
+    /* 创建location树 */
+
+    for (s = 0; s < cmcf->servers.nelts; s++) {
+
+        clcf = cscfp[s]->ctx->loc_conf[ngx_http_core_module.ctx_index];
+
+        if (ngx_http_init_locations(cf, cscfp[s], clcf) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+
+        if (ngx_http_init_static_location_trees(cf, clcf) != NGX_OK) {
+            return NGX_CONF_ERROR;
+        }
+    }
+
+
+    if (ngx_http_init_phases(cf, cmcf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    if (ngx_http_init_headers_in_hash(cf, cmcf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    for (m = 0; cf->cycle->modules[m]; m++) {
+        if (cf->cycle->modules[m]->type != NGX_HTTP_MODULE) {
+            continue;
+        }
+
+        module = cf->cycle->modules[m]->ctx;
+
+        if (module->postconfiguration) {
+            if (module->postconfiguration(cf) != NGX_OK) {
+                return NGX_CONF_ERROR;
+            }
+        }
+    }
+
+    if (ngx_http_variables_init_vars(cf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    /*
+     * http{}的cf->ctx在配置合并和后配置过程中是必需的
+     */
+
+    *cf = pcf;
+
+
+    if (ngx_http_init_phase_handlers(cf, cmcf) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+
+    /* 优化端口、地址和服务器名的列表 */
+
+    if (ngx_http_optimize_servers(cf, cmcf, cmcf->ports) != NGX_OK) {
+        return NGX_CONF_ERROR;
+    }
+
+    return NGX_CONF_OK;
+
+failed:
+
+    *cf = pcf;
+
+    return rv;
+}
+
 {
     char                        *rv;
     ngx_uint_t                   mi, m, s;
@@ -346,6 +581,20 @@ failed:
 }
 
 
+/*
+整体功能：初始化NGINX HTTP核心模块的各个处理阶段的处理函数数组。
+
+详细说明：
+- 函数返回类型为ngx_int_t，表示初始化结果。
+- 函数接受两个参数：
+  - cf：指向NGINX配置结构体ngx_conf_t的指针。
+  - cmcf：指向NGINX HTTP核心模块主配置结构体ngx_http_core_main_conf_t的指针。
+- 针对每个处理阶段，调用ngx_array_init初始化对应处理函数数组，并设置初始容量和元素大小。
+- 处理阶段包括：NGX_HTTP_POST_READ_PHASE、NGX_HTTP_SERVER_REWRITE_PHASE、
+  NGX_HTTP_REWRITE_PHASE、NGX_HTTP_PREACCESS_PHASE、NGX_HTTP_ACCESS_PHASE、
+  NGX_HTTP_PRECONTENT_PHASE、NGX_HTTP_CONTENT_PHASE、NGX_HTTP_LOG_PHASE。
+- 如果初始化失败，则返回NGX_ERROR，否则返回NGX_OK。
+*/
 static ngx_int_t
 ngx_http_init_phases(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 {
@@ -1471,9 +1720,64 @@ ngx_http_add_server(ngx_conf_t *cf, ngx_http_core_srv_conf_t *cscf,
 }
 
 
+/*
+ * ngx_http_optimize_servers - 监听服务器列表，排序并检查同一地址和端口下的服务器配置。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - cmcf：http核心模块的主配置结构体。
+ *   - ports：包含端口信息的数组。
+ *
+ * 返回：
+ *   - NGX_OK：成功。
+ *   - NGX_ERROR：失败。
+ */
 static ngx_int_t
 ngx_http_optimize_servers(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf,
     ngx_array_t *ports)
+{
+    ngx_uint_t             p, a;
+    ngx_http_conf_port_t  *port;
+    ngx_http_conf_addr_t  *addr;
+
+    if (ports == NULL) {
+        return NGX_OK;
+    }
+
+    port = ports->elts;
+    for (p = 0; p < ports->nelts; p++) {
+
+        ngx_sort(port[p].addrs.elts, (size_t) port[p].addrs.nelts,
+                 sizeof(ngx_http_conf_addr_t), ngx_http_cmp_conf_addrs);
+
+        /*
+         * 检查是否所有基于名称的服务器都具有相同的
+         * 配置作为给定地址:端口的默认服务器
+         */
+
+        addr = port[p].addrs.elts;
+        for (a = 0; a < port[p].addrs.nelts; a++) {
+
+            if (addr[a].servers.nelts > 1
+#if (NGX_PCRE)
+                || addr[a].default_server->captures
+#endif
+               )
+            {
+                if (ngx_http_server_names(cf, cmcf, &addr[a]) != NGX_OK) {
+                    return NGX_ERROR;
+                }
+            }
+        }
+
+        if (ngx_http_init_listening(cf, &port[p]) != NGX_OK) {
+            return NGX_ERROR;
+        }
+    }
+
+    return NGX_OK;
+}
+
 {
     ngx_uint_t             p, a;
     ngx_http_conf_port_t  *port;
@@ -1720,8 +2024,88 @@ ngx_http_cmp_dns_wildcards(const void *one, const void *two)
 }
 
 
+/*
+ * ngx_http_init_listening - 初始化监听器，根据端口信息创建listening结构体。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - port：包含端口信息的结构体。
+ *
+ * 返回：
+ *   - NGX_OK：成功。
+ *   - NGX_ERROR：失败。
+ */
 static ngx_int_t
 ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
+{
+    ngx_uint_t                 i, last, bind_wildcard;
+    ngx_listening_t           *ls;
+    ngx_http_port_t           *hport;
+    ngx_http_conf_addr_t      *addr;
+
+    addr = port->addrs.elts;
+    last = port->addrs.nelts;
+
+    /*
+     * 如果存在对“*：port”的绑定，那么我们需要仅绑定到“*：port”，
+     * 并忽略其他隐式绑定。绑定已经按顺序排序：显式绑定在开始，
+     * 隐式绑定在中间，通配符绑定在最后。
+     */
+
+    if (addr[last - 1].opt.wildcard) {
+        addr[last - 1].opt.bind = 1;
+        bind_wildcard = 1;
+
+    } else {
+        bind_wildcard = 0;
+    }
+
+    i = 0;
+
+    while (i < last) {
+
+        if (bind_wildcard && !addr[i].opt.bind) {
+            i++;
+            continue;
+        }
+
+        ls = ngx_http_add_listening(cf, &addr[i]);
+        if (ls == NULL) {
+            return NGX_ERROR;
+        }
+
+        hport = ngx_pcalloc(cf->pool, sizeof(ngx_http_port_t));
+        if (hport == NULL) {
+            return NGX_ERROR;
+        }
+
+        ls->servers = hport;
+
+        hport->naddrs = i + 1;
+
+        switch (ls->sockaddr->sa_family) {
+
+#if (NGX_HAVE_INET6)
+        case AF_INET6:
+            if (ngx_http_add_addrs6(cf, hport, addr) != NGX_OK) {
+                return NGX_ERROR;
+            }
+            break;
+#endif
+        default: /* AF_INET */
+            if (ngx_http_add_addrs(cf, hport, addr) != NGX_OK) {
+                return NGX_ERROR;
+            }
+            break;
+        }
+
+        addr++;
+        last--;
+    }
+
+    return NGX_OK;
+}
+
 {
     ngx_uint_t                 i, last, bind_wildcard;
     ngx_listening_t           *ls;
@@ -1793,8 +2177,93 @@ ngx_http_init_listening(ngx_conf_t *cf, ngx_http_conf_port_t *port)
 }
 
 
+/*
+ * ngx_http_add_listening - 添加一个监听器，创建ngx_listening_t结构体。
+ *
+ * 参数：
+ *   - cf：模块的配置结构体。
+ *   - addr：包含监听地址信息的结构体。
+ *
+ * 返回：
+ *   - ngx_listening_t指针：成功。
+ *   - NULL：失败。
+ */
 static ngx_listening_t *
 ngx_http_add_listening(ngx_conf_t *cf, ngx_http_conf_addr_t *addr)
+{
+    ngx_listening_t           *ls;
+    ngx_http_core_loc_conf_t  *clcf;
+    ngx_http_core_srv_conf_t  *cscf;
+
+    ls = ngx_create_listening(cf, addr->opt.sockaddr, addr->opt.socklen);
+    if (ls == NULL) {
+        return NULL;
+    }
+
+    ls->addr_ntop = 1;
+
+    ls->handler = ngx_http_init_connection;
+
+    cscf = addr->default_server;
+    ls->pool_size = cscf->connection_pool_size;
+
+    clcf = cscf->ctx->loc_conf[ngx_http_core_module.ctx_index];
+
+    ls->logp = clcf->error_log;
+    ls->log.data = &ls->addr_text;
+    ls->log.handler = ngx_accept_log_error;
+
+#if (NGX_WIN32)
+    {
+    ngx_iocp_conf_t  *iocpcf = NULL;
+
+    if (ngx_get_conf(cf->cycle->conf_ctx, ngx_events_module)) {
+        iocpcf = ngx_event_get_conf(cf->cycle->conf_ctx, ngx_iocp_module);
+    }
+    if (iocpcf && iocpcf->acceptex_read) {
+        ls->post_accept_buffer_size = cscf->client_header_buffer_size;
+    }
+    }
+#endif
+
+    ls->backlog = addr->opt.backlog;
+    ls->rcvbuf = addr->opt.rcvbuf;
+    ls->sndbuf = addr->opt.sndbuf;
+
+    ls->keepalive = addr->opt.so_keepalive;
+#if (NGX_HAVE_KEEPALIVE_TUNABLE)
+    ls->keepidle = addr->opt.tcp_keepidle;
+    ls->keepintvl = addr->opt.tcp_keepintvl;
+    ls->keepcnt = addr->opt.tcp_keepcnt;
+#endif
+
+#if (NGX_HAVE_DEFERRED_ACCEPT && defined SO_ACCEPTFILTER)
+    ls->accept_filter = addr->opt.accept_filter;
+#endif
+
+#if (NGX_HAVE_DEFERRED_ACCEPT && defined TCP_DEFER_ACCEPT)
+    ls->deferred_accept = addr->opt.deferred_accept;
+#endif
+
+#if (NGX_HAVE_INET6)
+    ls->ipv6only = addr->opt.ipv6only;
+#endif
+
+#if (NGX_HAVE_SETFIB)
+    ls->setfib = addr->opt.setfib;
+#endif
+
+#if (NGX_HAVE_TCP_FASTOPEN)
+    ls->fastopen = addr->opt.fastopen;
+#endif
+
+#if (NGX_HAVE_REUSEPORT)
+    ls->reuseport = addr->opt.reuseport;
+#endif
+
+    return ls;
+}
+
 {
     ngx_listening_t           *ls;
     ngx_http_core_loc_conf_t  *clcf;
