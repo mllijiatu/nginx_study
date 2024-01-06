@@ -104,26 +104,36 @@ typedef struct {
 } ngx_http_listen_opt_t;
 
 
+/*
+整体功能：定义了NGINX HTTP模块的各个处理阶段。
+
+详细说明：
+- NGX_HTTP_POST_READ_PHASE：在读取请求体之后的处理阶段。
+- NGX_HTTP_SERVER_REWRITE_PHASE：服务器重写阶段。
+- NGX_HTTP_FIND_CONFIG_PHASE：查找配置阶段。
+- NGX_HTTP_REWRITE_PHASE：重写阶段。
+- NGX_HTTP_POST_REWRITE_PHASE：重写后处理阶段。
+- NGX_HTTP_PREACCESS_PHASE：预访问阶段。
+- NGX_HTTP_ACCESS_PHASE：访问控制阶段。
+- NGX_HTTP_POST_ACCESS_PHASE：访问后处理阶段。
+- NGX_HTTP_PRECONTENT_PHASE：预内容处理阶段。
+- NGX_HTTP_CONTENT_PHASE：内容处理阶段。
+- NGX_HTTP_LOG_PHASE：日志记录阶段。
+*/
 typedef enum {
     NGX_HTTP_POST_READ_PHASE = 0,
-
     NGX_HTTP_SERVER_REWRITE_PHASE,
-
     NGX_HTTP_FIND_CONFIG_PHASE,
     NGX_HTTP_REWRITE_PHASE,
     NGX_HTTP_POST_REWRITE_PHASE,
-
     NGX_HTTP_PREACCESS_PHASE,
-
     NGX_HTTP_ACCESS_PHASE,
     NGX_HTTP_POST_ACCESS_PHASE,
-
     NGX_HTTP_PRECONTENT_PHASE,
-
     NGX_HTTP_CONTENT_PHASE,
-
     NGX_HTTP_LOG_PHASE
 } ngx_http_phases;
+
 
 typedef struct ngx_http_phase_handler_s  ngx_http_phase_handler_t;
 

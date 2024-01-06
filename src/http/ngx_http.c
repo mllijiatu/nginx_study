@@ -581,6 +581,20 @@ failed:
 }
 
 
+/*
+整体功能：初始化NGINX HTTP核心模块的各个处理阶段的处理函数数组。
+
+详细说明：
+- 函数返回类型为ngx_int_t，表示初始化结果。
+- 函数接受两个参数：
+  - cf：指向NGINX配置结构体ngx_conf_t的指针。
+  - cmcf：指向NGINX HTTP核心模块主配置结构体ngx_http_core_main_conf_t的指针。
+- 针对每个处理阶段，调用ngx_array_init初始化对应处理函数数组，并设置初始容量和元素大小。
+- 处理阶段包括：NGX_HTTP_POST_READ_PHASE、NGX_HTTP_SERVER_REWRITE_PHASE、
+  NGX_HTTP_REWRITE_PHASE、NGX_HTTP_PREACCESS_PHASE、NGX_HTTP_ACCESS_PHASE、
+  NGX_HTTP_PRECONTENT_PHASE、NGX_HTTP_CONTENT_PHASE、NGX_HTTP_LOG_PHASE。
+- 如果初始化失败，则返回NGX_ERROR，否则返回NGX_OK。
+*/
 static ngx_int_t
 ngx_http_init_phases(ngx_conf_t *cf, ngx_http_core_main_conf_t *cmcf)
 {

@@ -913,15 +913,26 @@ ngx_http_core_run_phases(ngx_http_request_t *r)
 
 
 
+/*
+整体功能：NGINX HTTP核心模块通用处理阶段函数。
+
+详细说明：
+- 函数返回类型为ngx_int_t，表示处理结果。
+- 函数接受两个参数：
+  - r：指向当前HTTP请求的ngx_http_request_t结构体的指针。
+  - ph：指向当前处理阶段的ngx_http_phase_handler_t结构体的指针。
+- 函数首先记录调试日志，输出当前处理阶段的信息。
+- 调用当前处理阶段的处理函数（ph->handler(r)）进行具体处理，得到返回值rc。
+- 如果处理成功（rc == NGX_OK），更新当前请求的处理阶段，并返回NGX_AGAIN。
+- 如果处理被拒绝（rc == NGX_DECLINED），将处理阶段索引加1，返回NGX_AGAIN。
+- 如果返回NGX_AGAIN或NGX_DONE，则表示需要进一步处理，返回NGX_OK。
+- 如果返回NGX_ERROR或NGX_HTTP_...，则表示出现错误，通过ngx_http_finalize_request函数结束请求。
+*/
+
 ngx_int_t
 ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
 {
     ngx_int_t  rc;
-
-    /*
-     * generic phase checker,
-     * used by the post read and pre-access phases
-     */
 
     ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0,
                    "generic phase: %ui", r->phase_handler);
@@ -942,12 +953,11 @@ ngx_http_core_generic_phase(ngx_http_request_t *r, ngx_http_phase_handler_t *ph)
         return NGX_OK;
     }
 
-    /* rc == NGX_ERROR || rc == NGX_HTTP_...  */
-
     ngx_http_finalize_request(r, rc);
 
     return NGX_OK;
 }
+
 
 
 ngx_int_t
