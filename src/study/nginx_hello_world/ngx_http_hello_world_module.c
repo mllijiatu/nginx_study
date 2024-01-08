@@ -1,6 +1,8 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
+#include <inaddr.h>
+
 /*
  * 该函数用于配置指令"hello_world"，指定处理函数为ngx_http_hello_world。
  */
